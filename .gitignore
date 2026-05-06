@@ -1,0 +1,12 @@
+*.env
+*.db
+/venv
+/to_json
+__pycache__
+to_json.py
+ban_words.txt
+check_algs.py
+*.log
+/.vscode
+bash.exe.stackdump
+*.db-journal
