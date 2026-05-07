@@ -148,9 +148,15 @@ class AttentionMessage(Modal):
 async def attention(
     ctx: discord.ApplicationContext,
     channel: discord.Option(
-        discord.TextChannel,
+        discord.abc.GuildChannel,
         description='Куда отправить сообщение?',
         name_localizations={'ru':'текстовый_канал'},
+        channel_types=[
+            discord.ChannelType.text,
+            discord.ChannelType.public_thread,
+            discord.ChannelType.private_thread,
+            discord.ChannelType.news_thread
+        ]
     ),  # type: ignore
 ) -> None:
     """
