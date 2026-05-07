@@ -18,8 +18,9 @@ class StartRemindModal(Modal):
     """
     Модальное окно для ввода данных напоминания.
     """
-    def __init__(self):
-        super().__init__(title='Параметры напоминания', timeout=None)
+    def __init__(self, target_member: discord.Member):
+        self.target_member = target_member
+        super().__init__(title=f'Напоминаниме для {target_member.display_name}', timeout=None)
 
         self.add_item(
             InputText(
@@ -88,30 +89,30 @@ class StartRemindModal(Modal):
             if remind_date < datetime.now():
                 remind_date = remind_date.replace(year=current_year + 1)
             convert_remind_date = discord.utils.format_dt(remind_date, style="F")
-            add_remind_to_db(interaction.user.id, message, remind_date)
+            add_remind_to_db(interaction.user.id, message, remind_date, self.target_member.id)
             await interaction.respond(
-                embed=remind_embed(convert_remind_date, message),
+                embed=remind_embed(convert_remind_date, message, self.target_member.display_name),
                 delete_after=20
             )
             logger.info(
-                f'Пользователь {interaction.user.display_name} создал напоминалку'
+                f'Пользователю {self.target_member.display_name} создали напоминалку'
                 f'на {remind_date}!'
             )
             await discord.utils.sleep_until(remind_date)
             try:
-                await interaction.user.send(
-                    embed=remind_send_embed(convert_remind_date, message),
+                await self.target_member.send(
+                    embed=remind_send_embed(convert_remind_date, message, self.target_member.display_name),
                     delete_after=3600
                 )
                 logger.info(
-                    f'Пользователь {interaction.user.display_name} получил напоминалку!'
+                    f'Пользователь {self.target_member.display_name} получил напоминалку!'
                 )
             except discord.Forbidden:
-                logger.warning(f'Пользователю "{interaction.user.display_name}" запрещено отправлять сообщения')
-                delete_remind_from_db(interaction.user.id, remind_date)
+                logger.warning(f'Пользователю "{self.target_member.display_name}" запрещено отправлять сообщения')
+                delete_remind_from_db(self.target_member.id, remind_date)
         except Exception as error:
             logger.error(
-                f'Пользователь {interaction.user.display_name} попытался сделать напоминание '
+                f'Пользователь {self.target_member.display_name} попытался сделать напоминание '
                 f'но получил ошибку {error}!'
             )
 
@@ -120,12 +121,15 @@ class StartRemindModal(Modal):
 @commands.has_any_role(
     LEADER_ROLE, OFICER_ROLE, TREASURER_ROLE, SERGEANT_ROLE, VETERAN_ROLE
 )
-async def remind(ctx: discord.ApplicationContext) -> None:
+async def remind(ctx: discord.ApplicationContext,
+                 member: discord.Member = None
+                 ) -> None:
     """
     Команда для отправки сообщения с напоминанием.
     """
     try:
-        await ctx.response.send_modal(StartRemindModal())
+        target_member = member or ctx.author
+        await ctx.response.send_modal(StartRemindModal(target_member))
     except Exception as error:
         logger.error(
                 f'При попытке запустить аукцион командой /remind '

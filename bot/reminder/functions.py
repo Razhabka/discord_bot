@@ -11,11 +11,11 @@ conn = sqlite3.connect('discord_bot.db')
 cursor = conn.cursor()
 
 
-def add_remind_to_db(user_id, message, remind_date):
+def add_remind_to_db(user_id, message, remind_date, target_id):
     """Добавляет напоминание в базу данных"""
     cursor.execute(
-        'INSERT OR REPLACE INTO reminds (user_id, message, remind_date) VALUES (?, ?, ?)',
-        (user_id, message, remind_date)
+        'INSERT OR REPLACE INTO reminds (author_id, message, remind_date, target_id) VALUES (?, ?, ?, ?)',
+        (user_id, message, remind_date, target_id)
     )
     conn.commit()
 

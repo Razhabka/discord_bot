@@ -52,7 +52,7 @@ async def on_ready() -> None:
     create_rcd_list_view = CreateRCDList()
     for index, role in INDEX_CLASS_ROLE.items():
         create_rcd_list_view.add_item(AddMemberToListButton(
-            label=f'Редактировать "{role[:-2]}ов"',
+            label=f'Редактировать "{role}"',
             custom_id=f'{index}КнопкаДобавления'
         ))
     bot.add_view(create_rcd_list_view)
@@ -67,7 +67,7 @@ async def on_ready() -> None:
     create_list_view.add_item(StopAppButton())
     for index, role in INDEX_CLASS_ROLE.items():
         create_list_view.add_item(AddMemberToListButtonPve(
-            label=f'Редактировать "{role[:-2]}ов"',
+            label=f'Редактировать "{role}"',
             custom_id=f'{index}КнопкаДобавления'
         ))
     bot.add_view(view=create_list_view)

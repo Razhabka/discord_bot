@@ -29,7 +29,7 @@ class AsyncORM():
     ):
         """"""
         data = model(**params)
-        session.add(data)
+        await session.merge(data)
         await session.flush()
 
     # --------------------------------------------------------------------------------
