@@ -98,7 +98,7 @@ class RcdDate(Modal):
                 view: discord.ui.View = CreateRCDList()
                 for index, role in INDEX_CLASS_ROLE.items():
                     view.add_item(AddMemberToListButton(
-                        label=f'Редактировать "{role[:-2]}ов"',
+                        label=f'Редактировать "{role}"',
                         custom_id=f'{index}КнопкаДобавления'
                     ))
                 await interaction.channel.send(view=view, embeds=rcd_buttons_embed_list)
