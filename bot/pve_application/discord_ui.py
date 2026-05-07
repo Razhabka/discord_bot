@@ -96,7 +96,7 @@ class PVEDate(Modal):
                 create_list_view.add_item(StopAppButton())
                 for index, role in INDEX_CLASS_ROLE.items():
                     create_list_view.add_item(AddMemberToListButtonPve(
-                        label=f'Редактировать "{role[:-2]}ов"',
+                        label=f'Редактировать "{role}"',
                         custom_id=f'{index}КнопкаДобавления'
                     ))
                 await interaction.channel.send(view=create_list_view, embeds=pve_buttons_embed_list)
@@ -431,7 +431,7 @@ class NotificationButton(Button):
                 create_list_view.add_item(StopAppButton())
                 for index, role in INDEX_CLASS_ROLE.items():
                     create_list_view.add_item(AddMemberToListButtonPve(
-                        label=f'Редактировать "{role[:-2]}ов"',
+                        label=f'Редактировать "{role}"',
                         custom_id=f'{index}КнопкаДобавления'
                     ))
                 await interaction.message.edit(view=create_list_view)
