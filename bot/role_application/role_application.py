@@ -4,7 +4,7 @@ from discord.ui import Modal, InputText, View, button
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.orm import role_app_orm
+from core.orm import role_app_orm, role_application_orm
 from core import (
     async_session_factory,
     ANSWER_IF_DUPLICATE_APP, ANSWER_IF_DUPLICATE_NICK, ANSWER_IF_CHEAT,
@@ -433,12 +433,22 @@ async def role_application(
     """
     Команда для вызова кнопки, которая обрабатывает запросы на доступ.
     """
+
+
     try:
+        async with async_session_factory() as session:
+            await role_app_orm.insert_important_channel_data(
+                session=session,
+                key='role_app_channel_id',
+                value=channel.id
+            )
+            await session.commit()
+            view = ApplicationButton(channel=channel)
         if message_id:
             message = ctx.channel.get_partial_message(int(message_id))
             await message.edit(
                 embed=start_app_embed(),
-                view=ApplicationButton(channel=channel)
+                view=view
             )
             await ctx.respond(
                 '_Кнопка подачи заявок обновлена, заявки снова работают!_',
@@ -448,7 +458,7 @@ async def role_application(
         else:
             await ctx.respond(
                 embed=start_app_embed(),
-                view=ApplicationButton(channel=channel)
+                view=view
             )
             await ctx.respond(
                 '_Кнопка подачи заявок запущена!_',
