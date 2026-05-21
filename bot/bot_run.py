@@ -2,8 +2,9 @@ import discord
 import sys
 from loguru import logger
 
+from bot.core import async_session_factory
 from core import settings
-from core.orm import async_orm, role_app_orm
+from core.orm import async_orm, role_app_orm, role_application_orm
 from randomaizer.randomaizer import RandomButton
 from rename_request.rename_request import RenameButton, AccessDeniedView
 from role_application.role_application import (
@@ -18,14 +19,9 @@ from set_group.set_group import SetGroupButton, EditGroupButton
 from core import APPLICATION_CHANNEL_ID, ANSWERS_IF_NO_ROLE, INDEX_CLASS_ROLE
 
 
-#logger.remove()
-#logger.add(
-#    sink='discord_bot.log', level=10, rotation='5 MB', mode='a'
-#)
+
 logger.remove()
-# Добавляем файл
 logger.add(sink='discord_bot.log', level=10, rotation='5 MB')
-# Добавляем обратно консоль
 logger.add(sink=sys.stderr, level="INFO")
 
 intents = discord.Intents.all()
@@ -50,11 +46,23 @@ async def on_ready() -> None:
     bot.add_view(StartRCDButton())
     bot.add_view(PrivateMessageView())
     create_rcd_list_view = CreateRCDList()
+
+    async with async_session_factory() as session:
+        role_app_channel = await role_app_orm.get_important_channel_data(session, 'role_app_channel_id')
+        if role_app_channel:
+            channel = bot.get_channel(int(role_app_channel))
+            if channel:
+                bot.add_view(ApplicationButton(channel=channel))
+                logger.info(f"Восстановлена прослушка заявок в канал: {channel.name}")
+            else:
+                logger.warning("Канал для заявок найден в БД, но бот не имеет к нему доступа!")
+
     for index, role in INDEX_CLASS_ROLE.items():
         create_rcd_list_view.add_item(AddMemberToListButton(
             label=f'Редактировать "{role}"',
             custom_id=f'{index}КнопкаДобавления'
         ))
+    bot.add_view(create_rcd_list_view)
     bot.add_view(create_rcd_list_view)
     cstm_btn_ids = await role_app_orm.get_btn_cstm_ids()
     for id in cstm_btn_ids:

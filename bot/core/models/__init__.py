@@ -4,7 +4,7 @@ from .rcd_app_models import (
     NoticeList, RcdApplication, ButtonInfo
 )
 from .pve_models import AppMemberListPve, DateInfoPve, PveApplication, NoticeListPve
-from .role_app_models import RoleApplicationData
+from .role_app_models import RoleApplicationData, BotSettings
 from .rename_request_models import RenameRequestModel
 from .authority_stat_models import AuthorityStatistic
 
@@ -24,5 +24,6 @@ __all__ = [
     'DateInfoPve',
     'PveApplication',
     'NoticeListPve',
-    'AuthorityStatistic'
+    'AuthorityStatistic',
+    'BotSettings'
 ]

@@ -1,5 +1,7 @@
 *.env
 *.db
+.venv/
+.idea/
 /venv
 /to_json
 __pycache__

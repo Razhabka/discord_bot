@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .base_async_orm import AsyncORM
 from core import async_session_factory
-from core.models import RoleApplicationData
+from core.models import RoleApplicationData, BotSettings
 
 
 class RoleApplicationORM(AsyncORM):
@@ -25,6 +25,16 @@ class RoleApplicationORM(AsyncORM):
             acc_btn_cstm_id=acc_btn_cstm_id,
             den_btn_cstm_id=den_btn_cstm_id
         )
+
+    async def insert_important_channel_data(self, session: AsyncSession, key: str, value: str):
+        result = await session.execute(select(BotSettings).filter_by(key=key))
+        settings = result.scalar_one_or_none()
+
+        if settings:
+            settings.value = value
+        else:
+            new_settings = BotSettings(key=key, value=value)
+            session.add(new_settings)
 
     # --------------------------------------------------------------------------------
     # Получение данных
@@ -53,6 +63,11 @@ class RoleApplicationORM(AsyncORM):
             )
             result = await session.execute(stmt)
             return result.all()
+
+    async def get_important_channel_data(self, session: AsyncSession, key: str):
+        result = await session.execute(select(BotSettings).filter_by(key=key))
+        settings = result.scalar_one_or_none()
+        return settings.value if settings else None
 
     # --------------------------------------------------------------------------------
     # Удаление данных

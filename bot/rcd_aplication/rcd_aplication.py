@@ -333,7 +333,7 @@ class SelectMemberToRCD(View):
     @select(
         select_type=discord.ComponentType.user_select,
         min_values=1,
-        max_values=3,
+        max_values=1,
         placeholder='Выбери игроков...'
     )
     async def select_callback(
@@ -342,11 +342,11 @@ class SelectMemberToRCD(View):
         interaction: discord.Interaction
     ):
         try:
-            await interaction.response.defer(invisible=False, ephemeral=True)
             async with async_session_factory() as session:
                 if not has_required_role(interaction.user):
-                    return await interaction.respond(
+                    return await interaction.response.send_message(
                         ANSWERS_IF_NO_ROLE,
+                        ephemeral=True,
                         delete_after=2
                     )
                 rcd_list_message_obj = await rcd_app_orm.get_message_data_obj(
@@ -370,7 +370,8 @@ class SelectMemberToRCD(View):
                 for each_embed in during_embed_list:
                     for field in each_embed.fields:
                         for value in field.value.split(','):
-                            check_set.add(value.strip())
+                            clean_value = value.split('(')[0].strip()
+                            check_set.add(clean_value)
 
                 for user in select.values:
                     if user.mention in check_set:
@@ -378,16 +379,20 @@ class SelectMemberToRCD(View):
                             '_Повторно добавлять одного и того же нельзя, проверь списки! ❌_',
                             delete_after=3
                         )
-                await self.update_embed(
-                    interaction,
-                    ', '.join(user.mention for user in select.values),
-                    ','.join(str(user.id) for user in select.values)
+
+                await interaction.response.send_modal(
+                    RCDCommentModal(index=self.index, users=select.values, select_view=self)
                 )
         except Exception as error:
             await interaction.respond('❌', delete_after=1)
             logger.error(
                 f'При выборе игроков возникла ошибка "{error}"'
             )
+
+        try:
+            await interaction.response.send_message('❌', ephemeral=True, delete_after=1)
+        except Exception:
+            pass
 
     @button(label='Очистить', style=discord.ButtonStyle.gray, custom_id='Очистить')
     async def button_callback(
@@ -423,7 +428,11 @@ class SelectMemberToRCD(View):
 
                 during_embeds = rcd_list_message.embeds
                 during_embed = during_embeds[1] if is_red else during_embeds[0]
-                during_embed.fields[self.index].value = value
+                old_value = during_embed.fields[self.index].value
+                if old_value and value:
+                    during_embed.fields[self.index].value = f"{old_value}, {value}"
+                else:
+                    during_embed.fields[self.index].value = value if value else ""
                 role = INDEX_CLASS_ROLE.get(self.index)
                 action = StaticNames.DEFENCE if is_red else StaticNames.ATACK
 
@@ -439,7 +448,7 @@ class SelectMemberToRCD(View):
 
                 await rcd_list_message.edit(embeds=during_embeds)
                 await session.commit()
-                await interaction.respond('✅', delete_after=1)
+                await interaction.delete_original_response()
         except Exception as error:
             await interaction.respond('❌', delete_after=1)
             logger.error(f'При обработке игроков возникла ошибка "{error}"')
@@ -624,21 +633,22 @@ class CreateRCDList(View):
         try:
             await interaction.response.defer(invisible=False, ephemeral=True)
 
-            async def send_notification(member: discord.Member, rcd_role: str, date):
+            async def send_notification(member: discord.Member, rcd_role: str, date, comment: str | None):
                 try:
                     await member.send(
                         embed=rcd_notification_embed(
                             interaction_user=interaction.user.display_name,
                             date=date,
                             jump_url=jump_url,
-                            rcd_role=rcd_role
+                            rcd_role=rcd_role,
+                            comment=comment
                         )
                         # delete_after=72000
                     )
                 except discord.Forbidden:
                     logger.warning(f'Пользователю "{member.display_name}" запрещено отправлять сообщения')
 
-            async def get_members_by_role(session, notice_data_list, action_name, date):
+            async def get_members_by_role(session, notice_data_list, action_name, date, current_embed):
 
                 if not notice_data_list:
                     return await interaction.channel.send(  # type: ignore
@@ -655,10 +665,26 @@ class CreateRCDList(View):
 
                     await rcd_app_orm.delete_from_notice_list(session, action=action, role=role)
 
+                    field_value = ""
+                    for field in current_embed.fields:
+                        if field.name == role:
+                            field_value = field.value
+                            break
                     for member_id in members_id:
                         member = await interaction.guild.fetch_member(member_id)
-                        await send_notification(member, role, date)
-                        logger.info(f'"{member.display_name}" оповещён об РЧД')
+                        player_comment = None
+
+                        if field_value:
+                            parts = field_value.split(',')
+                            for part in parts:
+                                if f"<@{member_id}>" in part or f"<@!{member_id}>" in part:
+                                    clean_comment = part.replace(f"<@{member_id}>", "").replace(f"<@!{member_id}>",
+                                                                                                "").strip()
+                                    if clean_comment:
+                                        player_comment = clean_comment
+                                    break
+                        await send_notification(member, role, date, player_comment)
+                        logger.info(f'"{member.display_name}" оповещён об РЧД. Комментарий: {player_comment}')
 
             async with async_session_factory() as session:
                 sergaunt_role: discord.Role = discord.utils.get(interaction.guild.roles, name=SERGEANT_ROLE)
@@ -687,6 +713,10 @@ class CreateRCDList(View):
                     and permissions_for_sergaunt == True else None
                 )
 
+                during_embed_list = interaction.message.embeds
+                f_embed = during_embed_list[0]
+                s_embed = during_embed_list[1] if len(during_embed_list) > 1 else None
+
                 if self.children[1].style == discord.ButtonStyle.red:
                     if await rcd_app_orm.get_notice_list_data(session, StaticNames.ATACK):
                         return await interaction.respond(
@@ -696,13 +726,13 @@ class CreateRCDList(View):
                     await get_members_by_role(
                         session,
                         await rcd_app_orm.get_notice_list_data(session, StaticNames.DEFENCE),
-                        StaticNames.DEFENCE, date_data_obj.date
+                        StaticNames.DEFENCE, date_data_obj.date, s_embed
                     )
                 else:
                     await get_members_by_role(
                         session,
                         await rcd_app_orm.get_notice_list_data(session, StaticNames.ATACK),
-                        StaticNames.ATACK, date_data_obj.date
+                        StaticNames.ATACK, date_data_obj.date, f_embed
                     )
 
                 await session.flush()
@@ -895,6 +925,48 @@ class StartRCDButton(View):
                 f'пользователем "{interaction.user.display_name}" '
                 f'возникла ошибка "{error}"'
             )
+
+
+class RCDCommentModal(Modal):
+    """
+    Модальное окно для ввода комментариев к выбранным игрокам.
+    """
+
+    def __init__(self, index: int, users: list[discord.User], select_view: View):
+        super().__init__(title="Ввод комментариев для РЧД", timeout=None)
+        self.index = index
+        self.users = users
+        self.select_view = select_view
+
+        for user in self.users:
+            self.add_item(
+                InputText(
+                    style=discord.InputTextStyle.short,
+                    label=f"Комментарий для {user.display_name}",
+                    placeholder="Кто он нахуй такой",
+                    required=False,
+                    max_length=50
+                )
+            )
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(invisible=False, ephemeral=True)
+
+        formatted_users_strings = []
+        users_ids = []
+
+        for i, user in enumerate(self.users):
+            comment = str(self.children[i].value).strip()
+            if comment:
+                formatted_users_strings.append(f"{user.mention} ({comment})")
+            else:
+                formatted_users_strings.append(f"{user.mention}")
+            users_ids.append(str(user.id))
+        await self.select_view.update_embed(
+            interaction,
+            value=", ".join(formatted_users_strings),
+            members_id=",".join(users_ids)
+        )
 
 
 @commands.slash_command()
