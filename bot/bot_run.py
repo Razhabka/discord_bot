@@ -1,9 +1,6 @@
-from shutil import which
-
 import discord
 import sys
 from loguru import logger
-from sqlalchemy import custom_op
 
 from bot.core import async_session_factory
 from core import settings
@@ -22,14 +19,9 @@ from set_group.set_group import SetGroupButton, EditGroupButton
 from core import APPLICATION_CHANNEL_ID, ANSWERS_IF_NO_ROLE, INDEX_CLASS_ROLE
 
 
-#logger.remove()
-#logger.add(
-#    sink='discord_bot.log', level=10, rotation='5 MB', mode='a'
-#)
+
 logger.remove()
-# Добавляем файл
 logger.add(sink='discord_bot.log', level=10, rotation='5 MB')
-# Добавляем обратно консоль
 logger.add(sink=sys.stderr, level="INFO")
 
 intents = discord.Intents.all()

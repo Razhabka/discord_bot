@@ -1,6 +1,10 @@
 from datetime import datetime
 import re
 import locale
+import discord
+
+from pygments.styles.dracula import comment
+
 try:
     locale.setlocale(locale.LC_ALL, 'ru_RU.UTF-8')
 except locale.Error:
@@ -178,8 +182,7 @@ class PveApplication(Modal):
                     )
                 gearscore: int = int(gs_value)
                 formatted_gearscore = locale.format_string('%d', gearscore, grouping=True)
-                
-                # Исходный маппинг ролей (добавил 'сапп' для полноты)
+
                 role_mapping = {
                     'tank': 'Танк',
                     'Tank': 'Танк',
@@ -189,29 +192,24 @@ class PveApplication(Modal):
                     'supp': 'Саппорт'
                 }
 
-                # Функция для перевода строки с ролями
                 def translate_roles(role_value: str) -> str:
-                    # Унифицируем разделители: заменяем "|" на ", " для упрощения
                     role_value = (
                         role_value.replace(" | ", ", ").replace("|", ", ")
                         .replace("/", ", ").replace(" / ", ", ").replace("\\", ", ").replace(" \\ ", ", ")
                     )
-                    
-                    # Разделяем по ", " и обрабатываем каждую часть
+
                     parts = role_value.split(", ")
                     translated_parts = []
                     
                     for part in parts:
-                        part = part.strip()  # Убираем лишние пробелы
+                        part = part.strip()
                         if part.lower() in role_mapping:
                             translated_parts.append(role_mapping[part.lower()])
                         else:
-                            translated_parts.append(part)  # Если не роль, оставляем как есть
-                    
-                    # Собираем обратно в строку с ", "
+                            translated_parts.append(part)
+
                     return ", ".join(translated_parts)
 
-                # Пример использования (вместо старого кода)
                 role = translate_roles(role_value)
                 
                 guild = user.mutual_guilds[0]
@@ -362,14 +360,15 @@ class NotificationButton(Button):
     @require_role
     async def callback(self, interaction: Interaction):
         try:
-            async def send_notification(member, pve_role: str, date):
+            async def send_notification(member, pve_role: str, date, comment: str | None):
                 try:
                     await member.send(
                         embed=pve_notification_embed(
                             interaction_user=interaction.user.display_name,
                             date=date,
                             jump_url=jump_url,
-                            pve_role=pve_role
+                            pve_role=pve_role,
+                            comment=comment
                         ),
                         # TODO: 10800
                         delete_after=10800
@@ -377,7 +376,7 @@ class NotificationButton(Button):
                 except Forbidden:
                     logger.warning(f'Пользователю "{member.display_name}" запрещено отправлять сообщения')
 
-            async def get_members_by_role(session, notice_data_list, date):
+            async def get_members_by_role(session, notice_data_list, date, current_embed):
 
                 if not notice_data_list:
                     return False
@@ -388,9 +387,27 @@ class NotificationButton(Button):
 
                     await pve_app_orm.delete_from_notice_list(session, role=role)
 
+                    field_value = ""
+                    if current_embed and current_embed.fields:
+                        for field in current_embed.fields:
+                            if field.name == role:
+                                field_value = field.value
+                                break
+
                     for member_id in members_id:
                         member = await interaction.guild.fetch_member(member_id)
-                        await send_notification(member, role, date)
+                        player_comment = None
+
+                        if field_value:
+                            parts = field_value.split(',')
+                            for part in parts:
+                                if f"<@{member_id}>" in part or f"<@!{member_id}>" in part:
+                                    clean_comment = part.replace(f"<@{member_id}>", "").replace(f"<@!{member_id}>",
+                                                                                                "").strip()
+                                    if clean_comment:
+                                        player_comment = clean_comment
+                                    break
+                        await send_notification(member, role, date, player_comment)
                         logger.info(f'"{member.display_name}" оповещён об ПВЕ')
                 
                 return True
@@ -409,10 +426,13 @@ class NotificationButton(Button):
 
                 jump_url = pve_app_channel.jump_url if 'Список ПВЕ' in pve_app_message.embeds[0].title else None
 
+                during_embed = interaction.message.embeds[0]
+
                 if not await get_members_by_role(
                     session,
                     await pve_app_orm.get_notice_list_data(session),
-                    date_data_obj.date
+                    date_data_obj.date,
+                    during_embed
                 ):
                     return await interaction.respond(
                         '🤔\n_Дядь, в списке пусто _\n',
@@ -486,6 +506,49 @@ class StopAppButton(Button):
             logger.error(f'При завершении работы с ПВЕ возникла ошибка "{error}"')
 
 
+class PVECommentModal(Modal):
+    """
+    Модальное окно для ввода комментариев к выбранным игрокам в ПВЕ.
+    """
+
+    def __init__(self, index: int, users: list[discord.User], select_view: View):
+        super().__init__(title="Ввод комментариев для ПВЕ", timeout=None)
+        self.index = index
+        self.users = users
+        self.select_view = select_view
+
+        for user in self.users:
+            self.add_item(
+                InputText(
+                    style=InputTextStyle.short,
+                    label=f"Комментарий для {user.display_name}",
+                    placeholder="Кто он нахуй такой",
+                    required=False,
+                    max_length=50
+                )
+            )
+
+    async def callback(self, interaction: Interaction):
+        await interaction.response.defer(invisible=False, ephemeral=True)
+
+        formatted_users_strings = []
+        users_ids = []
+
+        for i, user in enumerate(self.users):
+            comment = str(self.children[i].value).strip()
+            if comment:
+                formatted_users_strings.append(f"{user.mention} ({comment})")
+            else:
+                formatted_users_strings.append(f"{user.mention}")
+            users_ids.append(str(user.id))
+
+        await self.select_view.update_embed(
+            interaction,
+            value=", ".join(formatted_users_strings),
+            members_id=",".join(users_ids)
+        )
+
+
 class SelectMemberView(View):
     """
     Меню для выбора пользователей в РЧД список.
@@ -498,13 +561,12 @@ class SelectMemberView(View):
     @select(
         select_type=ComponentType.user_select,
         min_values=1,
-        max_values=8,
+        max_values=1,
         placeholder='Выбери игроков...',
         custom_id="SelectPve"
     )
     async def select_callback(self, select: Select, interaction: Interaction):
         try:
-            await interaction.response.defer(invisible=False, ephemeral=True)
             async with async_session_factory() as session:
                 pve_list_message_obj = await pve_app_orm.get_message_data_obj(
                     session=session,
@@ -513,12 +575,16 @@ class SelectMemberView(View):
                 pve_list_message = (
                     await interaction.channel.fetch_message(pve_list_message_obj.message_id)
                 )
-                pve_list_message_embeds = pve_list_message.embeds
+                during_embed = pve_list_message.embeds[0]
                 check_set: set[str] = set()
 
-                for field in pve_list_message_embeds[0].fields:
-                    for value in field.value.split(','):
-                        check_set.add(value.strip())
+                if during_embed and during_embed.fields:
+                    for field in during_embed.fields:
+                        if field.value:
+                            for value in field.value.split(','):
+                                clean_value = value.split('(')[0].strip()
+                                if clean_value:
+                                    check_set.add(clean_value)
 
                 for user in select.values:
                     if user.mention in check_set:
@@ -526,10 +592,8 @@ class SelectMemberView(View):
                             '_Повторно добавлять одного и того же нельзя, проверь списки! ❌_',
                             delete_after=3
                         )
-                await self.update_embed(
-                    interaction,
-                    ', '.join(user.mention for user in select.values),
-                    ','.join(str(user.id) for user in select.values)
+                await interaction.response.send_modal(
+                    PVECommentModal(index=self.index, users=select.values, select_view=self)
                 )
         except Exception as error:
             await interaction.respond('❌', delete_after=1)
@@ -557,7 +621,11 @@ class SelectMemberView(View):
                 pve_list_message = await interaction.channel.fetch_message(pve_list_message_obj.message_id)
 
                 during_embed = pve_list_message.embeds[0]
-                during_embed.fields[self.index].value = value
+                old_value = during_embed.fields[self.index].value
+                if old_value and value:
+                    during_embed.fields[self.index].value = f"{old_value}, {value}"
+                else:
+                    during_embed.fields[self.index].value = value if value else ""
                 role = INDEX_CLASS_ROLE.get(self.index)
 
                 if not members_id:
@@ -572,7 +640,10 @@ class SelectMemberView(View):
 
                 await pve_list_message.edit(embed=during_embed)
                 await session.commit()
-                await interaction.respond('✅', delete_after=1)
+                try:
+                    await interaction.delete_original_response()
+                except Exception:
+                    pass
         except Exception as error:
             await interaction.respond('❌', delete_after=1)
             logger.error(f'При обработке игроков возникла ошибка "{error}"')
