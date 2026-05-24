@@ -14,11 +14,12 @@ from discord import InputTextStyle, Interaction, utils, ButtonStyle, ComponentTy
 from discord.ui import Modal, InputText, View, Button, Select, select, button
 from loguru import logger
 
-from core import async_session_factory, PVE_CHANNEL_ID, TRANSLATION_ROLES, INDEX_CLASS_ROLE, PVE_APPLICATION_CHANNEL_ID
+from core import (async_session_factory, PVE_CHANNEL_ID,
+                  TRANSLATION_ROLES, INDEX_CLASS_ROLE, PVE_APPLICATION_CHANNEL_ID, PVE_ROLE, GUEST_ROLE)
 from core.orm import pve_app_orm
 from .embeds import (
     start_pve_embed, app_list_embed, pve_list_embed,
-    pve_notification_embed, publish_pve_embed
+    pve_notification_embed, publish_pve_embed, ask_pve_embed
 )
 from .static import StaticNamesPve
 from role_application.functions import require_role
@@ -80,8 +81,9 @@ class PVEDate(Modal):
                 await pve_app_orm.insert_date_info(
                     session, StaticNamesPve.PVE_DATE, convert_pve_date
                 )
-                app_channel_view = View(PveAppButton(), timeout=None)
-                await interaction.channel.send(embed=app_list_embed(convert_pve_date))
+                app_channel_view = View(PveAppButton(min_gear_score=min_gearscore), timeout=None)
+                await interaction.channel.send(embed=app_list_embed(convert_pve_date), view=StartPVEButton(min_gear_score=min_gearscore))
+                # await interaction.channel.send(embed=app_list_embed(convert_pve_date))
                 await pve_app_channel.send(embed=start_pve_embed(convert_pve_date, formatted_gearscore), view=app_channel_view)
                 await pve_app_orm.insert_message_id(
                     session=session,
@@ -125,8 +127,9 @@ class PveApplication(Modal):
     """
     Модальное окно для ввода данных на заявку ПВЕ.
     """
-    def __init__(self):
-        super().__init__(title='Заявка на ПВЕ', timeout=None)
+    def __init__(self, min_gear_score: int | None = None):
+        super().__init__(title='Заявка на ПВЕ', timeout=None),
+        self.min_gear_score = min_gear_score
 
         self.add_item(
             InputText(
@@ -171,16 +174,29 @@ class PveApplication(Modal):
                     )
                 class_value: str = str(self.children[0].value)
                 role_value: str = str(self.children[1].value)
-                gs_value: str = str(self.children[2].value)
+                gear_score: str = str(self.children[2].value)
                 if not class_value:
                     class_value = 'Любой класс'
 
-                if not gs_value.isdigit():
+                if not gear_score.isdigit():
                     return await interaction.respond(
                         '❌\n\nЗначение ГС только целочисленное\n\nThe HS value is an integer only',
                         delete_after=5
                     )
-                gearscore: int = int(gs_value)
+                if int(gear_score) > 100 and int(gear_score) < self.min_gear_score:
+                    logger.info(f'У игрока"{interaction.user.display_name}" ГС: "{gear_score:}", что меньше минимального: "{self.min_gear_score}"')
+                    return await interaction.respond(
+                        'У тебя маленький ГС',
+                        delete_after=3
+                    )
+                if int(gear_score) < 100 :
+                    logger.info(
+                        f'Игрок: "{interaction.user.display_name}" оказался клоуном и ввел ГС= "{gear_score}"')
+                    return await interaction.respond(
+                        'Блять, ты что КЛОУН?:clown:',
+                        delete_after=3
+                    )
+                gearscore: int = int(gear_score)
                 formatted_gearscore = locale.format_string('%d', gearscore, grouping=True)
 
                 role_mapping = {
@@ -248,7 +264,8 @@ class PveApplication(Modal):
 class PveAppButton(Button):
     """Кнопка для подачи заявки на ПВЕ"""
 
-    def __init__(self):
+    def __init__(self, min_gear_score: int | None = None):
+        self.min_gear_score = min_gear_score
         super().__init__(
             label="Подать заявку на ПВЕ (Apply for a PVE)",
             style=ButtonStyle.green,
@@ -265,7 +282,7 @@ class PveAppButton(Button):
                         delete_after=5,
                         ephemeral=True
                     )
-                await interaction.response.send_modal(PveApplication())
+                await interaction.response.send_modal(PveApplication(min_gear_score=self.min_gear_score))
         except Exception as error:
             await interaction.respond('❌', delete_after=1)
             logger.error(f'При нажатии на кнопку подачи заявки возникла ошибка "{error}"')
@@ -505,6 +522,300 @@ class StopAppButton(Button):
             await interaction.respond('❌', delete_after=1)
             logger.error(f'При завершении работы с ПВЕ возникла ошибка "{error}"')
 
+
+class StartPVEButton(View):
+    """
+    Кнопка для запуска ПВЕ заявок.
+    """
+
+    def __init__(
+            self,
+            timeout: float | None = None,
+            min_gear_score: int | None = None
+    ):
+        super().__init__(timeout=timeout)
+        self.min_gear_score = min_gear_score
+
+    @select(
+        select_type=discord.ComponentType.user_select,
+        min_values=1,
+        max_values=24,
+        placeholder='Выбери игроков, которых спросить об ПВЕ',
+        disabled=False,
+        custom_id='ВыберитеИгроков'
+    )
+    async def ask_callback(
+            self, select: discord.ui.Select, interaction: discord.Interaction
+    ):
+        try:
+            await interaction.response.defer(invisible=False, ephemeral=True)
+            async with async_session_factory() as session:
+                during_embed: discord.Embed = interaction.message.embeds[0]
+                ask_users: list[discord.Member] = [user for user in select.values]
+                date_obj = await pve_app_orm.get_pve_date_obj(session=session, pk=StaticNamesPve.PVE_DATE)
+                for user in ask_users:
+                    during_embed.fields[0].value += (f'\n{user.mention}: 🟡')
+                    try:
+                        await user.send(
+                            embed=ask_pve_embed(
+                                member=interaction.user,
+                                date=date_obj.date,
+                                min_gearscore=self.min_gear_score
+                            ),
+                            view=PrivateMessageView(self.min_gear_score),
+                            delete_after=86400
+                        )
+                        logger.info(f'Пользователю "{user.display_name}" был отправлен вопрос об РЧД')
+                    except discord.Forbidden:
+                        logger.warning(f'Пользователю "{user.display_name}" запрещено отправлять сообщения')
+                await interaction.message.edit(embed=during_embed)
+                await interaction.respond('✅', delete_after=1)
+        except Exception as error:
+            await interaction.respond('❌', delete_after=1)
+            logger.error(
+                f'При опросе игроков возникла ошибка "{error}"'
+            )
+
+    @button(
+        label='Спросить всех с ролью ПВЕ', style=discord.ButtonStyle.green,
+        emoji='📢', custom_id='СпроситьВсехПВЕ'
+    )
+    async def ask_all_veteran_callback(
+            self,
+            button: discord.ui.Button,
+            interaction: discord.Interaction
+    ):
+        try:
+            await interaction.response.defer(invisible=False, ephemeral=True)
+
+            during_embed: discord.Embed = interaction.message.embeds[0]
+
+            pve_role: discord.Role | None = discord.utils.get(interaction.guild.roles, name=PVE_ROLE)
+            if not pve_role:
+                return await interaction.respond("❌ Роль ПВЕ не найдена на этом сервере!", delete_after=5)
+
+            async with async_session_factory() as session:
+                date_obj = await pve_app_orm.get_pve_date_obj(session=session, pk=StaticNamesPve.PVE_DATE)
+
+            notified_count = 0
+
+            for pve in pve_role.members:
+                if pve.bot:
+                    continue
+
+                if during_embed.fields[0].value and pve.mention in during_embed.fields[0].value:
+                    continue
+
+                if during_embed.fields[0].value:
+                    during_embed.fields[0].value += f'\n{pve.mention}: 🟡'
+                else:
+                    during_embed.fields[0].value = f'{pve.mention}: 🟡'
+
+                try:
+                    await pve.send(
+                        embed=ask_pve_embed(
+                            member=interaction.user,
+                            date=date_obj.date,
+                            min_gearscore=self.min_gear_score
+                        ),
+                        view=PrivateMessageView(self.min_gear_score),
+                        delete_after=86400
+                    )
+                    logger.info(f'Пользователю "{pve.display_name}" был отправлен вопрос об РЧД (без БД)')
+                    notified_count += 1
+                except discord.Forbidden:
+                    logger.warning(f'Пользователю "{pve.display_name}" запрещено отправлять сообщения в ЛС')
+
+            if notified_count > 0:
+                button.disabled = True
+                button.style = discord.ButtonStyle.gray
+                button.label = f"Опрос запущен (Оповещено: {notified_count})"
+                button.emoji = "✅"
+                await interaction.message.edit(embed=during_embed, view=self)
+
+            await interaction.respond(f'✅ Опрос успешно разослан! Оповещено игроков: {notified_count}', delete_after=3)
+
+        except Exception as error:
+            await interaction.respond('❌ Ошибка при массовом опросе', delete_after=3)
+            logger.error(
+                f'При нажатии на кнопку "спросить ветеранов об РЧД" '
+                f'пользователем "{interaction.user.display_name}" '
+                f'возникла ошибка "{error}"'
+            )
+
+class PrivateMessageView(View):
+    """
+    Кнопка для отказа или соглашения идти в ПВЕ.
+    """
+    def __init__(self, min_gear_score: int | None = None):
+        super().__init__(timeout=None),
+        self.min_gear_score = min_gear_score
+
+    @button(
+        label='Отправить заявку на ПВЕ', style=discord.ButtonStyle.green,
+        emoji='📋', custom_id='ЗаявкаПВЕприват'
+    )
+    async def acces_callback(
+        self,
+        button: discord.ui.Button,
+        interaction: discord.Interaction
+    ):
+        try:
+            async with async_session_factory() as session:
+                all_member_ids = await pve_app_orm.get_all_appmember_ids(session)
+                if interaction.user.id in all_member_ids:
+                    return await interaction.respond('_Ты уже подал заявку! ✅_', delete_after=1)
+                await interaction.response.send_modal(RaidChampionDominionApplication(self.min_gear_score))
+        except Exception as error:
+            await interaction.respond('❌', delete_after=1)
+            logger.error(
+                f'При нажатии на кнопку отправки заявки на ПВЕ '
+                f'пользователем "{interaction.user.display_name}" '
+                f'возникла ошибка "{error}"'
+            )
+
+    @button(
+        label='Меня не будет ❌',
+        style=discord.ButtonStyle.red,
+        custom_id='МеняНеБудет'
+    )
+    async def denied_callback(
+            self,
+            button: discord.ui.Button,
+            interaction: discord.Interaction
+    ):
+        try:
+            await interaction.response.defer(invisible=False, ephemeral=True)
+            async with async_session_factory() as session:
+                guild = interaction.user.mutual_guilds[0]
+                member = guild.get_member(interaction.user.id)
+                start_pve_message_obj = await pve_app_orm.get_message_data_obj(
+                    session=session,
+                    pk=StaticNamesPve.START_PVE_MESSAGE
+                )
+                pve_list_channel_obj = await pve_app_orm.get_message_data_obj(
+                    session=session,
+                    pk=StaticNamesPve.PVE_LIST_CHANNEL
+                )
+                rcd_list_channel: discord.TextChannel = guild.get_channel(pve_list_channel_obj.message_id)
+                start_rcd_message: discord.Message = (
+                    await rcd_list_channel.fetch_message(start_pve_message_obj.message_id)
+                )
+                during_embed: discord.Embed = start_rcd_message.embeds[0]
+                field_value = during_embed.fields[0].value
+                if member.mention in field_value:
+                    new_value = field_value.replace(f'{member.mention}: 🟡', f'{member.mention}: 🔴')
+                    during_embed.fields[0].value = new_value
+                    await start_rcd_message.edit(embed=during_embed)
+                await interaction.message.delete()
+                await interaction.respond('_Принято ✅_', delete_after=1)
+                logger.info(f'"{interaction.user.display_name}" отказался быть на ПВЕ')
+        except Exception as error:
+            await interaction.respond('❌', delete_after=1)
+            logger.error(
+                f'При отправке отказа пользователем "{interaction.user.display_name}" '
+                f'возникла ошибка "{error}"'
+            )
+
+class RaidChampionDominionApplication(Modal):
+    """
+    Модальное окно для ввода данных на заявку ПВЕ.
+    """
+    def __init__(self, min_gear_score: int | None = None):
+        super().__init__(title='Заявка на ПВЕ', timeout=None)
+        self.min_gear_score = min_gear_score
+        self.add_item(
+            InputText(
+                style=discord.InputTextStyle.short,
+                label='Укажи ГС',
+                placeholder='Обязательно укажите ГС(можете округлить)',
+                required=True,
+                max_length=6
+            )
+        )
+
+        self.add_item(
+            InputText(
+                style=discord.InputTextStyle.multiline,
+                label='Укажи классы, на которых хочешь идти на ПВЕ',
+                placeholder='Если не заполнять, значит любой класс',
+                required=False,
+                max_length=80
+            )
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            await interaction.response.defer(invisible=False, ephemeral=True)
+            async with async_session_factory() as session:
+                gear_score: str = str(self.children[0].value)
+                if not gear_score:
+                    gear_score = '0'
+                if not gear_score.isdigit():
+                    return await interaction.respond(
+                        '_Строка для ввода ГС принимает только целые числа, повтори снова ⚠️_',
+                        delete_after=2
+                    )
+                if int(gear_score) > 100 and int(gear_score) < self.min_gear_score:
+                    logger.info(f'У игрока"{interaction.user.display_name}" ГС: "{gear_score:}", что меньше минимального: "{self.min_gear_score}"')
+                    return await interaction.respond(
+                        'Твоя заявка не будет принята, т.к. недостаточно ГС\n'
+                        f'Минимальный необходимый ГС: {self.min_gear_score}',
+                        delete_after=5
+                    )
+                if int(gear_score) < 100 :
+                    logger.info(
+                        f'Игрок: "{interaction.user.display_name}" оказался клоуном и ввел ГС = "{gear_score}"')
+                    return await interaction.respond(
+                        f'Блять, ты что КЛОУН?:clown:'
+                        f'\nВведи нормальный ГС, пример: {self.min_gear_score}',
+                        delete_after=5
+                    )
+                class_role: str = str(self.children[1].value)
+                if not class_role:
+                    class_role = 'Любой класс'
+                guild = interaction.user.mutual_guilds[0]
+                member: discord.Member = guild.get_member(interaction.user.id)
+                field_index = 0 if discord.utils.get(member.roles, name=PVE_ROLE) else 1
+                start_rcd_message_obj = await pve_app_orm.get_message_data_obj(
+                    session=session,
+                    pk=StaticNamesPve.START_PVE_MESSAGE
+                )
+                rcd_list_channel_obj = await pve_app_orm.get_message_data_obj(
+                    session=session,
+                    pk=StaticNamesPve.PVE_LIST_CHANNEL
+                )
+                rcd_list_channel: discord.TextChannel = guild.get_channel(rcd_list_channel_obj.message_id)
+                start_rcd_message: discord.Message = (
+                    await rcd_list_channel.fetch_message(start_rcd_message_obj.message_id)
+                )
+                during_embed: discord.Embed = start_rcd_message.embeds[0]
+                field_value = during_embed.fields[field_index].value
+                pattern = re.compile(rf'{member.mention}: (🟡|🔴)')
+                match = pattern.search(field_value)
+                if match:
+                    new_value = field_value.replace(
+                        match.group(0), f'{member.mention}: {class_role} ({gear_score})'
+                    )
+                else:
+                    new_value = field_value + f'\n{member.mention}: {class_role} ({gear_score})'
+                during_embed.fields[field_index].value = new_value
+                await start_rcd_message.edit(embed=during_embed)
+                await pve_app_orm.insert_appmember_id(session, interaction.user.id)
+                await session.commit()
+                if interaction.channel.type.value == 1:
+                    await interaction.message.delete()
+                await interaction.respond(
+                    '_Заявка принята ✅_',
+                    delete_after=1
+                )
+                logger.info(f'Принята заявка на ПВЕ от "{interaction.user.display_name}"')
+        except Exception as error:
+            await interaction.respond('❌', delete_after=1)
+            logger.error(
+                f'При отправке заявки на РЧД пользователем '
+                f'"{interaction.user.display_name}" произошла ошибка "{error}"'
+            )
 
 class PVECommentModal(Modal):
     """

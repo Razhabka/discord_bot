@@ -124,6 +124,8 @@ SERGEANT_ROLE: str = 'Старшина'
 
 VETERAN_ROLE: str = 'Ветеран'
 
+PVE_ROLE: str = 'ПВЕ'
+
 GUEST_ROLE: str = 'На краю тишины'
 
 WIZARD_PARTY: str = 'Пачка Визарда'

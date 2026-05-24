@@ -1,8 +1,10 @@
 from discord import Embed
+import discord
 
 from core import (
     ATTENTION, RCD_LIST_IMAGE_URL, INDEX_CLASS_ROLE,
-    EXCLAMATION_MARK_URL, PVE_URL, TRANSLATION_ROLES
+    EXCLAMATION_MARK_URL, PVE_URL, TRANSLATION_ROLES,
+    QUESTION_IMAGE_URL
 )
 
 
@@ -124,4 +126,22 @@ def publish_pve_embed(date: str) -> Embed:
         color=0x9900ff
     )
     embed.set_thumbnail(url=PVE_URL)
+    return embed
+
+def ask_pve_embed(member: discord.Member, date: str, min_gearscore: int) -> discord.Embed:
+    """
+    Функция для создания вложения всем ПВЕшникам.
+    """
+    embed = discord.Embed(
+        title=ATTENTION,
+        description=(
+            f'_Рассылка от пользователя {member.display_name}\n\n'
+            f'Сможешь ли ты пойти с нами на ПВЕ({date}) в этот раз?\n'
+            f'📌 Минимальный ГС:  **{min_gearscore}**\n'
+            f'Если да, заполни пожалуйста заявку на ПВЕ 😊_!\n\n'
+            f'Если нет — нажми кнопку «Меня не будет».'
+        ),
+        color=0xfffb00
+    )
+    embed.set_thumbnail(url=QUESTION_IMAGE_URL)
     return embed
