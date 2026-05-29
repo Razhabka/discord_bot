@@ -1,16 +1,16 @@
 import discord
 
-from core import ATTENTION, SMALL_GUILD_ICON_URL
+from core import SMALL_GUILD_ICON_URL
 
 
-def attention_embed(value: str) -> discord.Embed:
+def attention_embed(header: str, message: str, color: int = 0xc00433) -> discord.Embed:
     """
     Функция для создания вложения с предупреждением.
     """
     embed = discord.Embed(
-        title=ATTENTION,
-        description=f'{value}',
-        color=0xfffb00
+        title=header,
+        description=f'{message}',
+        color=color
     )
     embed.set_thumbnail(url=SMALL_GUILD_ICON_URL)
     return embed

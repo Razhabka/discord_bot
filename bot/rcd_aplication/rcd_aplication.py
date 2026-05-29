@@ -75,7 +75,9 @@ class RcdDate(Modal):
                 rcd_date = datetime(
                     year=current_year,
                     month=month,
-                    day=day)
+                    day=day,
+                    hour=21,
+                    minute=00)
                 if rcd_date < datetime.now():
                     rcd_date = rcd_date.replace(year=current_year + 1)
                 convert_rcd_date = discord.utils.format_dt(rcd_date, style="D")
@@ -130,8 +132,8 @@ class RaidChampionDominionApplication(Modal):
             InputText(
                 style=discord.InputTextStyle.short,
                 label='Укажи количество чести',
-                placeholder='Если не указать, то 0 по дефолту',
-                required=False,
+                placeholder='Обязательно укажите значение',
+                required=True,
                 max_length=3
             )
         )
@@ -151,13 +153,29 @@ class RaidChampionDominionApplication(Modal):
             await interaction.response.defer(invisible=False, ephemeral=True)
             async with async_session_factory() as session:
                 honor: str = str(self.children[0].value)
-                if not honor:
-                    honor = '0'
                 if not honor.isdigit():
                     return await interaction.respond(
                         '_Строка для ввода чести принимает только целые числа, повтори снова ⚠️_',
                         delete_after=2
                     )
+                # if int(honor) < 100:
+                #     logger.info(
+                #         f'Игрок: "{interaction.user.display_name}" оказался клоуном и ввел честь = "{honor}"')
+                #     return await interaction.respond(
+                #         f'Блять, ты что КЛОУН?:clown:'
+                #         f'\nУ тебя не может быть меньше 100 чести'
+                #         '\nЕще раз нажми кнопку и введи реальное значение, иначе твоя заявка не будет принята',
+                #         delete_after=10
+                #     )
+                if int(honor) > 500:
+                    logger.info(
+                        f'У еблана "{interaction.user.display_name}" чести больше, чему всей моей семьи "{honor}"')
+                    return await interaction.respond(
+                        f'СКОЛЬКО НАХУЙ У ТЕБЯ ЧЕСТИ, А ТЫ С ДРУГИМИ ПОДЕЛИТЬСЯ НЕ ХОЧЕШЬ :face_with_raised_eyebrow: '
+                        '\nЕще раз нажми кнопку и введи реальное значение, иначе твоя заявка не будет принята',
+                        delete_after=10
+                    )
+
                 class_role: str = str(self.children[1].value)
                 if not class_role:
                     class_role = 'Любой класс'

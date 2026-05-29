@@ -123,18 +123,51 @@ class AttentionMessage(Modal):
 
         self.add_item(
             InputText(
+                style=discord.InputTextStyle.short,
+                label='Укажите заголовок',
+                placeholder='Не более 100 символов',
+                max_length=100,
+                required=False
+            )
+        )
+        self.add_item(
+            InputText(
                 style=discord.InputTextStyle.multiline,
                 label='Укажи содержание сообщения',
                 placeholder='Не более 4000 символов',
                 max_length=4000
             )
         )
+        self.add_item(
+            InputText(
+                style=discord.InputTextStyle.short,
+                label='Укажите код цвета (HEX)',
+                placeholder='Например: #ff0000 или 00ff29 (Оставь пустым для стандартного)',
+                max_length=7,
+                required=False
+            )
+        )
 
     async def callback(self, interaction: discord.Interaction):
         try:
             await interaction.response.defer(invisible=False, ephemeral=True)
-            message: str = str(self.children[0].value)
-            await self.channel.send(embed=attention_embed(value=message))
+            header = self.children[0].value if self.children[0].value != "" else None
+            message: str = str(self.children[1].value)
+            raw_color: str = str(self.children[2].value).strip()
+            embed_color = 0xc00433
+
+            if raw_color:
+                hex_color = raw_color.replace('#', '')
+                try:
+                    embed_color = int(hex_color, 16)
+                except ValueError:
+                    await interaction.respond(
+                        '⚠️ Неверный формат цвета! Используйте HEX-код, например: `#ff0000` или `00ff00`. '
+                        'Сообщение отправлено со стандартным цветом.',
+                        ephemeral=True,
+                        delete_after=7
+                    )
+            await self.channel.send(embed=attention_embed(header=header, message=message, color=embed_color))
             await interaction.respond('✅', delete_after=1)
         except Exception as error:
             logger.error(
@@ -187,17 +220,39 @@ async def attention_error(
 
 class SetNewDescription(Modal):
     """Модальное окно для установки нового описания embed"""
-    def __init__(self, message_id: int, channel: discord.TextChannel):
+    def __init__(self, message_id: int, channel: discord.abc.GuildChannel, current_title: str | None, description: str | None, current_color: str | None) -> None:
         super().__init__(title='Укажи новое описание embed', timeout=None)
         self.message_id = message_id
         self.channel = channel
 
         self.add_item(
             InputText(
+                style=discord.InputTextStyle.short,
+                label='Укажите новый заголовок',
+                placeholder= "Оставь пустым, чтобы убрать заголовок",
+                max_length=100,
+                required=False,
+                value=current_title
+            )
+        )
+
+        self.add_item(
+            InputText(
                 style=discord.InputTextStyle.multiline,
                 label='Укажи содержание сообщения',
                 placeholder='Не более 4000 символов',
-                max_length=4000
+                max_length=4000,
+                value=description
+            )
+        )
+        self.add_item(
+            InputText(
+                style=discord.InputTextStyle.short,
+                label='Укажите код цвета (HEX)',
+                placeholder='Например: #ff0000 или 00ff29 (Оставь пустым для стандартного)',
+                max_length=7,
+                required=False,
+                value= current_color
             )
         )
 
@@ -209,7 +264,24 @@ class SetNewDescription(Modal):
                 embed: discord.Embed = message.embeds[0]
             except Exception as error:
                 logger.error(f'Ошибка при поиске embed! "{error}"')
-            embed.description = self.children[0].value
+            raw_title = self.children[0].value
+            raw_description = self.children[1].value
+            raw_color = self.children[2].value
+            embed.title = raw_title if raw_title != "" else None
+            embed.description = raw_description if raw_description != "" else None
+            if raw_color:
+                hex_color = raw_color.replace('#', '')
+                try:
+                    embed.color = discord.Color(int(hex_color, 16))
+                except ValueError:
+                    await interaction.respond(
+                        '⚠️ Неверный формат цвета! Используйте HEX-код, например: `#ff0000`. '
+                        'Цвет оставлен без изменений.',
+                        ephemeral=True,
+                        delete_after=7
+                    )
+            else:
+                embed.color = None
             await message.edit(embed=embed)
             await interaction.respond('✅', delete_after=1)
         except Exception as error:
@@ -227,15 +299,50 @@ async def edit_embed_description(
         str,
         description='ID сообщения, которое нужно изменить',
         name_localizations={'ru':'id_сообщения'}
-    )  # type: ignore
+    ),
+    channel: discord.Option(
+        discord.abc.GuildChannel,
+        description='Канал, где находится сообщение ',
+        name_localizations={'ru': 'канал_или_ветка'},
+        required=False,
+        channel_types=[
+            discord.ChannelType.text,
+            discord.ChannelType.public_thread,
+            discord.ChannelType.private_thread,
+            discord.ChannelType.news_thread
+        ]
+        ) # type: ignore
 ) -> None:
     """
     Команда для изменения embed description, написанное ботом.
     """
     try:
+        target_channel = channel or ctx.channel
+        if not message_id.isdigit():
+            await ctx.respond('_ID сообщения должен состоять только из цифр!_', delete_after=3)
+            return
+        try:
+            message: discord.Message = await target_channel.fetch_message(int(message_id))
+        except discord.NotFound:
+            await ctx.respond(
+                f'_Сообщение с ID `{message_id}` не найдено в канале {target_channel.mention}!_',
+                delete_after=5
+            )
+            return
+        current_title = None
+        if message.embeds:
+            embed = message.embeds[0]
+            current_title = message.embeds[0].title
+            current_description = message.embeds[0].description
+            current_color = message.embeds[0].color
+            if embed.color and embed.color.value is not None:
+                current_color = f"#{embed.color.value:06x}"
         await ctx.response.send_modal(SetNewDescription(
             message_id=int(message_id),
-            channel=ctx.channel
+            channel=target_channel,
+            current_title=current_title,
+            description=current_description,
+            current_color=current_color
         ))
         logger.info(
             f'Команда "/edit_embed_description" вызвана пользователем'

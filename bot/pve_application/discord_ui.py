@@ -344,7 +344,7 @@ class PublishListButton(Button):
                 for field in [field for field in during_embed_list.fields if field.value != '']:
                     name, value, inline = field.name, field.value, field.inline
                     embed.add_field(
-                        name=f'{name[:-1]} ({TRANSLATION_ROLES.get(name[:-2], name[:-2])}s):', value=value, inline=inline
+                        name=f'{name[:-1]}:', value=value, inline=inline
                     )
                 pve_app_message_embeds[0] = embed
                 await pve_app_message.edit(embeds=pve_app_message_embeds, view=None)

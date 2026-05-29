@@ -25,17 +25,18 @@ def access_embed() -> discord.Embed:
     return embed
 
 
-def denied_embed(user: discord.abc.User, reason: str) -> discord.Embed:
+def denied_embed(user: discord.abc.User, reason: str, guest_role: str) -> discord.Embed:
     """
     Функция для создания вложения с информацией об отказе в доступе.
     """
     embed = discord.Embed(
         title='_Приветствую!_',
         description=(
-            f'_{user.display_name} отказал тебе '
-            f'в доступе на сервер гильдии {GUILD_NAME}!_'
+            f'_{user.display_name} не выдал тебе полный доступ на сервер гильдии {GUILD_NAME}.'
+            f'\n\nНо тебе была выдана роль: {guest_role}, открывающая доступ к полезным каналам сервера.'
+            f'\n\nP.S. Будем рады увидеть твою следующую заявку в гильдию!😉'
         ),
-        color=0xff0000
+        color=0x5fbeaa
     )
     embed.set_thumbnail(url=DENIED_IMAGE_URL)
     embed.set_image(url=GUILD_IMAGE_URL)
