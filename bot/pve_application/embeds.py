@@ -1,8 +1,10 @@
 from discord import Embed
+import discord
 
 from core import (
     ATTENTION, RCD_LIST_IMAGE_URL, INDEX_CLASS_ROLE,
-    EXCLAMATION_MARK_URL, PVE_URL, TRANSLATION_ROLES
+    EXCLAMATION_MARK_URL, PVE_URL, TRANSLATION_ROLES,
+    QUESTION_IMAGE_URL
 )
 
 
@@ -13,9 +15,8 @@ def start_pve_embed(date: str, min_gearscore: str) -> Embed:
     embed = Embed(
         title=f'_**Заявки на ПВЕ (PVE Applications)\n{date}**_',
         description=(
-            f'_Минимальный ГС (min gearscore): {min_gearscore}\n'
+            f'_Минимальный ГС: {min_gearscore}\n'
             'Тыкай на кнопку ниже, чтобы подать заявку на ПВЕ!\n\n'
-            'Click the button below to submit your PVE application!_ ⬇️'
         ),
         color=0x9900ff
     )
@@ -66,7 +67,6 @@ def pve_notification_embed(
     Функция для создания вложения о включении пользователя в список ПВЕ.
     """
     delete_notification_ru = "-# Сообщение автоматически удалится через 3 часа!"
-    delete_notification_en = "-# The message will be automatically deleted in 3 hours!"
 
     role_ru = pve_role[:-2]
     
@@ -74,26 +74,18 @@ def pve_notification_embed(
         title=f'_**ПВЕ (PVE)\n{date}**_',
         description=(
             '_**Сообщаем то, что тебя включили в список ПВЕ!**'
-            '\n'
-            '**We inform you that you have been included in the PVE list!**'
             '\n\n'
             f'Требуемая роль: **{comment[1:-1]}**'
             '\n'
             f'Требуемый класс: **{role_ru}**'
             '\n\n'
             f'Если по какой-то причине ты не можешь присутствовать, отпишись {interaction_user}❗'
-            '\n'
-            f'If for some reason you cannot attend, message {interaction_user}❗'
             '\n\n'
             'Ссылка на список ПВЕ'
-            '\n'
-            'Link to the PVE list'
             '\n\n'
             f'{jump_url}_'
             '\n\n'
             f'{delete_notification_ru}'
-            '\n'
-            f'{delete_notification_en}'
         ),
         color=0x9900ff
     )
@@ -120,8 +112,26 @@ def publish_pve_embed(date: str) -> Embed:
     Функция для создания вложения с публикацией списка РЧД.
     """
     embed = Embed(
-        title=f'_**Список ПВЕ (PVE List)\n{date}**_',
+        title=f'_**Список ПВЕ\n{date}**_',
         color=0x9900ff
     )
     embed.set_thumbnail(url=PVE_URL)
+    return embed
+
+def ask_pve_embed(member: discord.Member, date: str, min_gearscore: int) -> discord.Embed:
+    """
+    Функция для создания вложения всем ПВЕшникам.
+    """
+    embed = discord.Embed(
+        title=ATTENTION,
+        description=(
+            f'_Рассылка от пользователя {member.display_name}\n\n'
+            f'Сможешь ли ты пойти с нами на ПВЕ({date}) в этот раз?\n'
+            f'📌 Минимальный ГС:  **{min_gearscore}**\n'
+            f'Если да, заполни пожалуйста заявку на ПВЕ 😊_!\n\n'
+            f'Если нет — нажми кнопку «Меня не будет».'
+        ),
+        color=0xfffb00
+    )
+    embed.set_thumbnail(url=QUESTION_IMAGE_URL)
     return embed

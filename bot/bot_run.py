@@ -11,9 +11,12 @@ from role_application.role_application import (
     ApplicationButton, has_required_role
 )
 from rcd_aplication.rcd_aplication import (
-    StartRCDButton, CreateRCDList, AddMemberToListButton, PrivateMessageView
+    StartRCDButton, CreateRCDList, AddMemberToListButton,
+    PrivateMessageView as RcdPrivetMessage
 )
-from pve_application.discord_ui import PveAppButton, PublishListButton, NotificationButton, StopAppButton, AddMemberToListButtonPve
+from pve_application.discord_ui import (
+    PveAppButton, PublishListButton, NotificationButton, StopAppButton, AddMemberToListButtonPve,
+    PrivateMessageView as PvePrivetMessage)
 from role_application.role_application import RoleButton
 from set_group.set_group import SetGroupButton, EditGroupButton
 from core import APPLICATION_CHANNEL_ID, ANSWERS_IF_NO_ROLE, INDEX_CLASS_ROLE
@@ -44,7 +47,8 @@ async def on_ready() -> None:
     bot.add_view(SetGroupButton())
     bot.add_view(EditGroupButton())
     bot.add_view(StartRCDButton())
-    bot.add_view(PrivateMessageView())
+    bot.add_view(RcdPrivetMessage())
+    bot.add_view(PvePrivetMessage())
     create_rcd_list_view = CreateRCDList()
 
     async with async_session_factory() as session:

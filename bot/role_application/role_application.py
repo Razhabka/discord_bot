@@ -9,7 +9,8 @@ from core import (
     async_session_factory,
     ANSWER_IF_DUPLICATE_APP, ANSWER_IF_DUPLICATE_NICK, ANSWER_IF_CHEAT,
     ANSWER_IF_CLICKED_THE_SAME_TIME, LEADER_ROLE, OFICER_ROLE,
-    TREASURER_ROLE, SERGEANT_ROLE, GUEST_ROLE, ANSWERS_IF_NO_ROLE
+    TREASURER_ROLE, SERGEANT_ROLE, GUEST_ROLE, ANSWERS_IF_NO_ROLE,
+    DULL_LIGHTS_ROLE
 )
 from .embeds import (
     access_embed, denied_embed, application_embed, start_app_embed
@@ -47,6 +48,9 @@ class AcceptRoleButton(discord.ui.Button):
             role_guest = discord.utils.get(
                 interaction.guild.roles, name=GUEST_ROLE
             )
+            dull_lights = discord.utils.get(
+                interaction.guild.roles, name=DULL_LIGHTS_ROLE
+            )
             curent_embed: discord.Embed = interaction.message.embeds[0]
             nickname = curent_embed.author.name
             async with async_session_factory() as session:
@@ -62,6 +66,7 @@ class AcceptRoleButton(discord.ui.Button):
                     )
                 await member.edit(nick=nickname)
                 await member.add_roles(role_sergeant)
+                await member.add_roles(dull_lights)
                 await member.remove_roles(role_guest)
                 curent_embed.add_field(
                     name='_Результат рассмотрения_ ✅',
@@ -105,8 +110,8 @@ class DeniedRoleButton(discord.ui.Button):
         roleapp_view: View
     ):
         super().__init__(
-            label='Отправить в ЛС, что не подходит',
-            style=discord.ButtonStyle.red,
+            label='Выдать гостевую роль',
+            style=discord.ButtonStyle.blurple,
             custom_id=custom_id
         )
         self.roleapp_view = roleapp_view
@@ -127,6 +132,15 @@ class DeniedRoleButton(discord.ui.Button):
                 member: discord.Member = discord.utils.get(
                     interaction.guild.members, id=obj.user_id
                 )
+                role_guest = discord.utils.get(
+                    interaction.guild.roles, name=GUEST_ROLE
+                )
+                dull_lights = discord.utils.get(
+                    interaction.guild.roles, name=DULL_LIGHTS_ROLE
+                )
+                await member.edit(nick=nickname)
+                await member.add_roles(role_guest)
+                await member.add_roles(dull_lights)
                 await interaction.response.send_modal(DeniedRoleModal(
                     nickname=nickname,
                     view=self.roleapp_view,
@@ -201,12 +215,12 @@ class DeniedRoleModal(Modal):
                     )
                 value = self.children[0].value
                 self.embed.add_field(
-                        name='_Результат рассмотрения_ ❌',
-                        value=f'_{interaction.user.mention} отказал в доступе!_',
+                        name='_Результат рассмотрения_ :pig:',
+                        value=f'_{interaction.user.mention} выдал(а) гостевую роль!_',
                         inline=False
                     )
                 try:
-                    await self.user.send(embed=denied_embed(interaction.user, value))
+                    await self.user.send(embed=denied_embed(interaction.user, value, guest_role=GUEST_ROLE))
                 except discord.Forbidden:
                     error_message = (
                         f'❌\nПользователю "{self.user.display_name}" '

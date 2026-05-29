@@ -77,7 +77,7 @@ CATCH_BUG_MESSAGE: str = (
     f'напиши {LEADER_NICKNAME} 👍_'
 )
 
-GUILD_NAME: str = 'Мрачный жнец'
+GUILD_NAME: str = 'Мрачный Жнец'
 
 TEСHNICAL_WORKS: str = '_Скоро запустим!_👌'
 
@@ -124,6 +124,10 @@ SERGEANT_ROLE: str = 'Старшина'
 
 VETERAN_ROLE: str = 'Ветеран'
 
+PVE_ROLE: str = 'ПВЕ'
+
+DULL_LIGHTS_ROLE: str = 'Глухие Огни'
+
 GUEST_ROLE: str = 'На краю тишины'
 
 WIZARD_PARTY: str = 'Пачка Визарда'
@@ -154,12 +158,12 @@ class StaticNames:
     RCD_LIST_CHANNEL: str = 'rcd_list_channel'
 
 
-# URLS
-ACCESS_IMAGE_URL: str = 'https://media.discordapp.net/attachments/1182584501147279491/1230181776870346802/Green-Check-PNG.png?ex=6632630f&is=661fee0f&hm=6cf4321094865e1b393274b680eadfc6c92fd283b16bb54d367047525751439c&=&format=webp&quality=lossless&width=350&height=350'
+ACCESS_IMAGE_URL: str = 'https://cdn.discordapp.com/attachments/1492227631821619323/1510029209731338370/content_1.png?ex=6a1b53ca&is=6a1a024a&hm=78d5edc01fac16abe6c519c34d67d0c32d1a2f15dfdb7237743890cb9aa89170&'
 
 AUCTION_IMAGE_URL: str = 'https://media.discordapp.net/attachments/1182584501147279491/1243512304918859899/bdf1f4750907e2d7.png?ex=6651be94&is=66506d14&hm=b53497728a4f60c4d9a801401a64b9dad4fdcf150eb09bcefdae51b0bbb94c72&=&format=webp&quality=lossless&width=825&height=477'
 
-DENIED_IMAGE_URL: str = 'https://media.discordapp.net/attachments/1182584501147279491/1235613979468890203/620aa731fdd06c8a3fcbb87c_X-p-3200.png?ex=663502b1&is=6633b131&hm=aea28542a471088120a83b916423296a7e31076ef5194ea03fac5dc7cb8d8c55&=&format=webp&quality=lossless&width=640&height=640'
+# DENIED_IMAGE_URL: str = 'https://media.discordapp.net/attachments/1182584501147279491/1235613979468890203/620aa731fdd06c8a3fcbb87c_X-p-3200.png?ex=663502b1&is=6633b131&hm=aea28542a471088120a83b916423296a7e31076ef5194ea03fac5dc7cb8d8c55&=&format=webp&quality=lossless&width=640&height=640'
+DENIED_IMAGE_URL: str = 'https://cdn.discordapp.com/attachments/1492227631821619323/1510029523650089210/content_2.png?ex=6a1b5415&is=6a1a0295&hm=5e20a0d0be25661541ab446b8d6f1135b18437d5a689ae192a2460f227ecf3ce&'
 
 GUILD_IMAGE_URL: str = 'https://media.discordapp.net/attachments/1416557848992677939/1497593815568093274/ChatGPT_Image_Apr_25_2026_03_41_08_PM.png?ex=69ee166d&is=69ecc4ed&hm=408280cd2320d2987b826166c7aa30aef7e1b328296031b41b7a87ba3d289ef4&=&format=webp&quality=lossless&width=968&height=968'
 
