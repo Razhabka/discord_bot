@@ -5,6 +5,7 @@ from .rcd_application_orm import rcd_app_orm
 from .rename_request_orm import rename_req_orm
 from .pve_application_orm import pve_app_orm
 from .authority_stat_orm import authority_stat_orm
+from .set_group_orm import set_group_orm
 
 
 __all__ = [
@@ -14,5 +15,6 @@ __all__ = [
     'rcd_app_orm',
     'rename_req_orm',
     'pve_app_orm',
-    'authority_stat_orm'
+    'authority_stat_orm',
+    'set_group_orm'
 ]
