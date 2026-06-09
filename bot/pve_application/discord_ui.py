@@ -230,6 +230,7 @@ class PveApplication(Modal):
                 
                 guild = user.mutual_guilds[0]
                 member = guild.get_member(user.id)
+                field_index = 0 if discord.utils.get(member.roles, name=PVE_ROLE) else 1
                 start_pve_message_obj = await pve_app_orm.get_message_data_obj(
                     session=session,
                     pk=StaticNamesPve.START_PVE_MESSAGE
@@ -244,10 +245,21 @@ class PveApplication(Modal):
                         'Error retrieving data from the database, please contact your server administrator!_',
                         delete_after=5
                     )
+                # Zalupa
                 pve_list_channel = guild.get_channel(pve_list_channel_obj.message_id)
                 start_pve_message = await pve_list_channel.fetch_message(start_pve_message_obj.message_id)
                 during_embed = start_pve_message.embeds[0]
-                during_embed.fields[0].value += f'\n{member.mention}: {class_value} ({role}), [{formatted_gearscore}]'
+                # during_embed.fields[0].value += f'\n{member.mention}: {class_value} ({role}), [{formatted_gearscore}]'
+                field_value = during_embed.fields[field_index].value
+                pattern = re.compile(rf'{member.mention}: (🟡|🔴)')
+                match = pattern.search(field_value)
+                if match:
+                    new_value = field_value.replace(
+                        match.group(0), f'{member.mention}: {role} ({gear_score})'
+                    )
+                else:
+                    new_value = field_value + f'\n{member.mention}: {role} ({gear_score})'
+                during_embed.fields[field_index].value = new_value
                 await start_pve_message.edit(embed=during_embed)
                 await pve_app_orm.insert_appmember_id(session, user.id)
                 await session.commit()
@@ -565,7 +577,7 @@ class StartPVEButton(View):
                             view=PrivateMessageView(self.min_gear_score),
                             delete_after=86400
                         )
-                        logger.info(f'Пользователю "{user.display_name}" был отправлен вопрос об РЧД')
+                        logger.info(f'Пользователю "{user.display_name}" был отправлен вопрос об ПВЕ')
                     except discord.Forbidden:
                         logger.warning(f'Пользователю "{user.display_name}" запрещено отправлять сообщения')
                 await interaction.message.edit(embed=during_embed)
@@ -621,7 +633,7 @@ class StartPVEButton(View):
                         view=PrivateMessageView(self.min_gear_score),
                         delete_after=86400
                     )
-                    logger.info(f'Пользователю "{pve.display_name}" был отправлен вопрос об РЧД (без БД)')
+                    logger.info(f'Пользователю "{pve.display_name}" был отправлен вопрос об ПВЕ')
                     notified_count += 1
                 except discord.Forbidden:
                     logger.warning(f'Пользователю "{pve.display_name}" запрещено отправлять сообщения в ЛС')
@@ -789,6 +801,7 @@ class RaidChampionDominionApplication(Modal):
                 start_rcd_message: discord.Message = (
                     await rcd_list_channel.fetch_message(start_rcd_message_obj.message_id)
                 )
+                #Zalupa 2
                 during_embed: discord.Embed = start_rcd_message.embeds[0]
                 field_value = during_embed.fields[field_index].value
                 pattern = re.compile(rf'{member.mention}: (🟡|🔴)')

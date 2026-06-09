@@ -7,6 +7,7 @@ from .pve_models import AppMemberListPve, DateInfoPve, PveApplication, NoticeLis
 from .role_app_models import RoleApplicationData, BotSettings
 from .rename_request_models import RenameRequestModel
 from .authority_stat_models import AuthorityStatistic
+from .set_group_model import GroupMember
 
 
 __all__ = [
@@ -25,5 +26,6 @@ __all__ = [
     'PveApplication',
     'NoticeListPve',
     'AuthorityStatistic',
-    'BotSettings'
+    'BotSettings',
+    'GroupMember'
 ]

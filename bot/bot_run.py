@@ -4,7 +4,7 @@ from loguru import logger
 
 from bot.core import async_session_factory
 from core import settings
-from core.orm import async_orm, role_app_orm, role_application_orm
+from core.orm import async_orm, role_app_orm, set_group_orm
 from randomaizer.randomaizer import RandomButton
 from rename_request.rename_request import RenameButton, AccessDeniedView
 from role_application.role_application import (
@@ -18,7 +18,7 @@ from pve_application.discord_ui import (
     PveAppButton, PublishListButton, NotificationButton, StopAppButton, AddMemberToListButtonPve,
     PrivateMessageView as PvePrivetMessage)
 from role_application.role_application import RoleButton
-from set_group.set_group import SetGroupButton, EditGroupButton
+from set_group.set_group import SetGroupButton, GroupManagementView
 from core import APPLICATION_CHANNEL_ID, ANSWERS_IF_NO_ROLE, INDEX_CLASS_ROLE
 
 
@@ -45,11 +45,36 @@ async def on_ready() -> None:
     bot.add_view(ApplicationButton(channel=app_channel))
     bot.add_view(AccessDeniedView())
     bot.add_view(SetGroupButton())
-    bot.add_view(EditGroupButton())
     bot.add_view(StartRCDButton())
     bot.add_view(RcdPrivetMessage())
     bot.add_view(PvePrivetMessage())
     create_rcd_list_view = CreateRCDList()
+
+    try:
+        async with async_session_factory() as session:
+            active_groups = await set_group_orm.get_all_active_groups(session)
+
+            for group_id, data in active_groups.items():
+                leader_id = data["leader_id"]
+                member_ids = [int(m) for m in data["member_ids"] if m is not None]
+
+                if leader_id is None:
+                    from core import LEADER_ID
+                    leader_id = int(LEADER_ID)
+                    logger.warning(f"У группы {group_id} не найден лидер в БД, установлен дефолтный.")
+
+                logger.info(
+                    f"[БД ЗАГРУЗКА] Восстановлена группа: {group_id} | Лидер: {leader_id} | Участники: {member_ids}")
+
+                bot.add_view(GroupManagementView(
+                    group_id=group_id,
+                    leader_id=leader_id,
+                    member_ids=member_ids
+                ))
+
+        logger.info(f"Успешно восстановлено панелей управления группами: {len(active_groups)}")
+    except Exception as e:
+        logger.error(f"Ошибка при восстановлении GroupManagementView: {e}")
 
     async with async_session_factory() as session:
         role_app_channel = await role_app_orm.get_important_channel_data(session, 'role_app_channel_id')
