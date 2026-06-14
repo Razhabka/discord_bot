@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 import discord
 
 from core import SMALL_GUILD_ICON_URL
@@ -23,9 +25,12 @@ def symbols_list_embed(
     """
     Функция для создания вложения с со списком за символы славы.
     """
+
+    today = date.today()
+    next_week = today + timedelta(days=7)
     embed = discord.Embed(
-        title='_Список знамён и накидок за чистый авторитет_',
-        color=0x00ff29
+        title=f'_Список знамён и чемпионских накидок за чистый авторитет_',
+        color=0x5bd395
     )
     embed.add_field(
         name='_Знамёна:_',
@@ -34,9 +39,15 @@ def symbols_list_embed(
     )
     if cape_list:
         embed.add_field(
-            name='_Накидки:_',
+            name='_Чемпионские накидки:_',
             value=f'_{cape_list}_',
             inline=True
         )
+
+    embed.add_field(
+        name='\u200b',
+        value=f'_*Все знамёна и чемпионские накидки выданы на период_ c {today} по {next_week} ✅',
+        inline=False
+    )
     embed.set_thumbnail(url=SMALL_GUILD_ICON_URL)
     return embed
