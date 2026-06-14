@@ -1,6 +1,7 @@
 import base64
 import json
 import re
+from dataclasses import dataclass
 from datetime import datetime
 
 import chardet
@@ -15,7 +16,7 @@ from .functions import (
 )
 from .embeds import attention_embed, symbols_list_embed
 from regular_commands.regular_commands import command_error
-from core import LEADER_ROLE, OFICER_ROLE, TREASURER_ROLE, async_session_factory
+from core import LEADER_ROLE, OFICER_ROLE, TREASURER_ROLE, async_session_factory, RANK_MAPPING, CLOAK_MAPPING
 from core.orm import authority_stat_orm
 
 
@@ -354,7 +355,6 @@ async def edit_embed_description(
             f'"{error}"'
         )
 
-
 @edit_embed_description.error
 async def edit_embed_error(
     ctx: discord.ApplicationContext,
@@ -365,10 +365,67 @@ async def edit_embed_error(
     """
     await command_error(ctx, error, "edit_embed_description")
 
+class AddCommentsModal(Modal):
+    """Модальное окно для добавления комментариев к выбранным игрокам."""
+
+    def __init__(self, selected_members: list[discord.Member], list_type: str,
+                 view_instance: 'CreateOrEditSymbolsList'):
+        super().__init__(title='Добавление комментариев', timeout=None)
+        self.selected_members = selected_members
+        self.list_type = list_type
+        self.view_instance = view_instance
+
+        # Создаем одно удобное текстовое поле, где перечислены выбранные игроки
+        initial_value = ""
+        for idx, member in enumerate(selected_members, start=1):
+            initial_value += f"{idx}. {member.display_name} — \n"
+
+        self.add_item(
+            InputText(
+                style=discord.InputTextStyle.multiline,
+                label=f'Напишите комментарии после знака "—"',
+                value=initial_value,
+                placeholder='Оставьте пустые строки или измените текст по желанию',
+                max_length=2000
+            )
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            await interaction.response.defer(invisible=False, ephemeral=True)
+
+            raw_text = self.children[0].value
+            lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
+
+            final_lines = []
+            for idx, member in enumerate(self.selected_members):
+                comment = ""
+                if idx < len(lines):
+                    current_line = lines[idx]
+                    if "—" in current_line:
+                        comment = current_line.split("—", 1)[1].strip()
+
+                if comment:
+                    final_lines.append(f"{member.mention} — *{comment}*")
+                else:
+                    final_lines.append(f"{member.mention}")
+
+            result_text = "\n".join(final_lines)
+
+            if self.list_type == 'banner':
+                self.view_instance.banner_list = result_text
+            else:
+                self.view_instance.cape_list = result_text
+
+            await interaction.respond('✅ Комментарии сохранены! Нажмите "Опубликовать", чтобы применить изменения.',
+                                      delete_after=5)
+        except Exception as error:
+            logger.error(f'Ошибка в модальном окне комментариев symbols_list: {error}')
+            await interaction.respond(f'❌ Ошибка: {error}', ephemeral=True)
 
 class CreateOrEditSymbolsList(View):
     """
-    Универсальное модальное окно для создания или
+    Универсальное окно для создания или
     редактирования списка за символы свершения
     """
     banner_list: str | None = None
@@ -389,23 +446,31 @@ class CreateOrEditSymbolsList(View):
         select_type=select_type,
         min_values=min_values,
         max_values=max_values,
-        placeholder=placeholder
+        placeholder='Выбери игроков на ЗНАМЁНА'
     )
     async def banner_callback(
         self, select: discord.ui.Select, interaction: discord.Interaction
     ):
-        await handle_selection(self, select, interaction, 'banner')
+        selected_members = select.values
+        if selected_members:
+            await interaction.response.send_modal(
+                AddCommentsModal(selected_members=selected_members, list_type='banner', view_instance=self)
+            )
 
     @select(
         select_type=select_type,
         min_values=min_values,
         max_values=max_values,
-        placeholder=placeholder
+        placeholder='Выбери игроков на НАКИДКИ'
     )
     async def cape_callback(
         self, select: discord.ui.Select, interaction: discord.Interaction
     ):
-        await handle_selection(self, select, interaction, 'cape')
+        selected_members = select.values
+        if selected_members:
+            await interaction.response.send_modal(
+                AddCommentsModal(selected_members=selected_members, list_type='cape', view_instance=self)
+            )
 
     @button(
         label='Опубликовать',
@@ -454,16 +519,15 @@ class CreateOrEditSymbolsList(View):
                         cape_list=self.cape_list
                     )
                 )
-            await interaction.respond('✅', delete_after=1)
+            await interaction.respond('✅ Список успешно опубликован!', delete_after=2)
         except Exception as error:
             logger.error(
-                f'При создании списка знамён/накидок вышла "{error}"'
-            )
+                f'При создании списка знамён/накидок вышла "{error}"')
 
 
 @commands.slash_command()
 @commands.has_any_role(LEADER_ROLE, OFICER_ROLE, TREASURER_ROLE)
-async def symbols_list(
+async def tabards_list(
     ctx: discord.ApplicationContext,
     message_id: discord.Option(
         str,
@@ -510,7 +574,7 @@ async def symbols_list(
         )
 
 
-@symbols_list.error
+@tabards_list.error
 async def embed_manager_error(
     ctx: discord.ApplicationContext,
     error: Exception
@@ -576,7 +640,6 @@ class ChooseSimbolsAmount(Modal):
                     await interaction.respond("Ошибка: файл не может быть прочитан. Проверьте кодировку файла.")
                     return
             
-            # Находим позицию "Info: " в содержимом
             info_start = content.find('Info: ')
             if info_start == -1:
                 await interaction.respond("Ошибка: в файле не найдено 'Info: '.")
@@ -584,8 +647,6 @@ class ChooseSimbolsAmount(Modal):
             info_start += len('Info: ')
             json_str = content[info_start:].strip()  # Убираем лишние пробелы и символы после
             
-            # Предполагаем, что JSON начинается с '[' и заканчивается ']'
-            # Если есть несколько, берем первый после "Info: "
             json_start = json_str.find('[')
             if json_start == -1:
                 await interaction.respond("Ошибка: после 'Info: ' не найден JSON-массив.")
@@ -611,24 +672,20 @@ class ChooseSimbolsAmount(Modal):
                 members, roles, result
             )
 
-            # Валидируем вводимое значение пользователем для знамён
             validated_banner_amount = await validate_amount(
                 value=banner_amount,
                 interaction=interaction
             )
-            # Генерируем список знамён
             banner_list = await generate_member_list(
                 sorted_result[:validated_banner_amount],
                 interaction=interaction
             )
-            # Валидируем вводимое значение пользователем для накидок
             if cape_amount:
                 validated_cape_amount = await validate_amount(
                     value=cape_amount,
                     interaction=interaction,
                     is_banner=False
                 )
-                # Генерируем список накидок, если нужно
                 cape_list = await generate_member_list(
                     sorted_result[
                         validated_banner_amount:validated_cape_amount
@@ -650,55 +707,222 @@ class ChooseSimbolsAmount(Modal):
                 f'за накидки/чемпы, но получил ошибку {error}!'
             )
 
+@dataclass
+class GuildMember:
+    nick: str
+    rank: str
+    loyalty: int
+    authority: int
+    cloak: str
 
-@commands.slash_command()
+
+@commands.slash_command(
+    name="auto_simbols_list",
+    description="Загрузить файл file.txt (GuildStats) и вывести ТОПы по чистому авторитету.",
+)
 @commands.has_any_role(LEADER_ROLE, OFICER_ROLE, TREASURER_ROLE)
 async def auto_simbols_list(
-    ctx: discord.ApplicationContext,
-    message_id: discord.Option(
-        str,
-        description='ID сообщения с прикрепленным user.cfg',
-        name_localizations={'ru': 'id_сообщения'}
-    )  # type: ignore
+        ctx: discord.ApplicationContext,
+        file: discord.Option(
+            discord.Attachment,
+            description="Файл user.cfg или текстовый лог GuildStats",
+            name_localizations={'ru': 'файл_логов'}
+        )
 ) -> None:
-    """
-    Загружает статистику авторитета из user.cfg и сохраняет в базу данных.
-    """
     try:
         await ctx.defer(ephemeral=True)
-        if not message_id.isdigit():
-            await ctx.respond('Некорректный ID сообщения.')
+
+        if not file.filename.endswith(('.cfg', '.txt')):
+            await ctx.respond("Ошибка: Пожалуйста, прикрепите файл с расширением .txt")
             return
 
-        checking_message: discord.Message = await ctx.channel.fetch_message(int(message_id))
-        if not checking_message.attachments:
-            await ctx.respond('В указанном сообщении нет вложения.')
+        bytes_data = await file.read()
+
+        try:
+            content = bytes_data.decode('utf-8')
+        except UnicodeDecodeError:
+            content = bytes_data.decode('cp1251')
+
+        members = []
+        pattern = re.compile(r"Info:\s*([^|]+)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(\d+)")
+
+        for line in content.splitlines():
+            match = pattern.search(line)
+            if match:
+                nick = match.group(1).strip()
+
+                if nick.lower() == "nick":
+                    continue
+
+                rank_id = int(match.group(2))
+                loyalty = int(match.group(3))
+                raw_authority = int(match.group(4))
+                cloak_id = int(match.group(5))
+
+                if cloak_id == 1:
+                    clean_authority = round(raw_authority / 1.5)
+                elif cloak_id in [2, 3, 4, 5]:
+                    clean_authority = round(raw_authority / 2.0)
+                else:
+                    clean_authority = raw_authority
+
+                rank_str = RANK_MAPPING.get(rank_id, f"Неизвестный ранг ({rank_id})")
+                cloak_str = CLOAK_MAPPING.get(cloak_id, f"Неизвестная накидка ({cloak_id})")
+
+                members.append(GuildMember(
+                    nick=nick,
+                    rank=rank_str,
+                    loyalty=loyalty,
+                    authority=clean_authority,
+                    cloak=cloak_str
+                ))
+
+        if not members:
+            await ctx.respond("Не удалось найти данные об игроках в файле. Проверьте формат логов.")
             return
 
-        bytes_data = await checking_message.attachments[0].read()
-        content = _decode_text_file(bytes_data)
-        latest_overall_ms, snapshot_date, rows = _extract_latest_authority_data(content)
+        members.sort(key=lambda m: m.authority, reverse=True)
 
-        async with async_session_factory() as session:
-            await authority_stat_orm.replace_snapshot_data(
-                session=session,
-                snapshot_overall_ms=latest_overall_ms,
-                snapshot_date=snapshot_date,
-                rows=rows
-            )
-            await session.commit()
+        top_5_pool = [m for m in members if m.authority >= 800000]
+        top_3_pool = [m for m in members if 500000 <= m.authority <= 799999]
 
-        await ctx.respond(
-            f'Загружено записей: {len(rows)}.\n'
-            f'Дата среза: {snapshot_date} (overallMs={latest_overall_ms}).'
+        embed = discord.Embed(
+            title="🏆 Статистика ЧИСТОГО авторитета гильдии",
+            color=discord.Color.green()
         )
-        logger.info(
-            f'Команда "/auto_simbols_list" вызвана "{ctx.user.display_name}", '
-            f'сохранено записей авторитета: {len(rows)}.'
-        )
+
+        top_5_text = ""
+        for i in range(5):
+            if i < len(top_5_pool):
+                m = top_5_pool[i]
+                top_5_text += f"**{i+1}. {m.nick}** — {m.authority:,} авт. ({m.rank}, {m.cloak})\n"
+            else:
+                top_5_text += f"*{i + 1}. Место пусто*\n"
+        embed.add_field(name="⭐ Топ для выдачи знамени", value=top_5_text, inline=False)
+
+        top_3_text = ""
+        for i in range(3):
+            if i < len(top_3_pool):
+                m = top_3_pool[i]
+                top_3_text += f"**{i+1}. {m.nick}** — {m.authority:,} авт. ({m.rank}, {m.cloak})\n"
+            else:
+                top_3_text += f"*{i + 1}. Место пусто*\n"
+        embed.add_field(name="🏅 Топ для выдачи чемпы", value=top_3_text, inline=False)
+
+        # Выводим результат
+        await ctx.respond(embed=embed)
+        logger.info(f'Команда "/auto_simbols_list" обработана через файл. Загружено игроков: {len(members)}')
+
     except Exception as error:
-        await ctx.respond(f'Ошибка: {error}')
         logger.error(f'Ошибка в команде "/auto_simbols_list": "{error}"')
+        await ctx.respond(f'Произошла ошибка при обработке файла: {error}')
+
+@commands.slash_command(
+    name="stat_auto_month",
+    description="Загрузить файл file.txt (GuildStats) и вывести ТОПы по чистому авторитету.",
+)
+@commands.has_any_role(LEADER_ROLE, OFICER_ROLE, TREASURER_ROLE)
+async def stat_auto_month(
+        ctx: discord.ApplicationContext,
+        file: discord.Option(
+            discord.Attachment,
+            description="Файл user.cfg или текстовый лог GuildStats",
+            name_localizations={'ru': 'файл_логов'}
+        ),
+        some_number: discord.Option(
+            int,
+            description="Введите какое-то целое число (например, лимит или период)",
+            name_localizations={'ru': 'сумма_выплаты'},
+            required=True
+        )
+) -> None:
+    try:
+        await ctx.defer(ephemeral=True)
+
+        if not file.filename.endswith(('.cfg', '.txt')):
+            await ctx.respond("Ошибка: Пожалуйста, прикрепите файл с расширением .txt")
+            return
+
+        bytes_data = await file.read()
+
+        try:
+            content = bytes_data.decode('utf-8')
+        except UnicodeDecodeError:
+            content = bytes_data.decode('cp1251')
+
+        members = []
+        pattern = re.compile(r"Info:\s*([^|]+)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(\d+)")
+
+        for line in content.splitlines():
+            match = pattern.search(line)
+            if match:
+                nick = match.group(1).strip()
+
+                if nick.lower() == "nick":
+                    continue
+
+                rank_id = int(match.group(2))
+                loyalty = int(match.group(3))
+                raw_authority = int(match.group(4))
+                cloak_id = int(match.group(5))
+                if raw_authority == 0:
+                    continue
+                rank_str = RANK_MAPPING.get(rank_id, f"Неизвестный ранг ({rank_id})")
+                cloak_str = CLOAK_MAPPING.get(cloak_id, f"Неизвестная накидка ({cloak_id})")
+
+                members.append(GuildMember(
+                    nick=nick,
+                    rank=rank_str,
+                    loyalty=loyalty,
+                    authority=raw_authority,
+                    cloak=cloak_str
+                ))
+
+        if not members:
+            await ctx.respond("Не удалось найти данные об игроках в файле. Проверьте формат логов.")
+            return
+
+        members.sort(key=lambda m: m.authority, reverse=True)
+
+        embed = discord.Embed(
+            title="🏆 Всех членов гильдии по авторитету",
+            color=discord.Color.green()
+        )
+
+        current_text = ""
+        first_chunk = True
+
+        for i, m in enumerate(members):
+            raw_val = m.authority / 1000000 * some_number
+            calculated_val = round(raw_val)
+
+            line = f"**{i + 1}. {m.nick}** — {m.authority:,} ➔ {calculated_val:,}\n"
+
+            if len(current_text) + len(line) > 3500:
+                if first_chunk:
+                    embed.description = current_text
+                    await ctx.respond(embed=embed)
+                    first_chunk = False
+                else:
+                    next_embed = discord.Embed(description=current_text, color=discord.Color.green())
+                    await ctx.send(embed=next_embed)
+
+                current_text = line
+            else:
+                current_text += line
+
+        if current_text:
+            if first_chunk:
+                embed.description = current_text
+                await ctx.respond(embed=embed)
+            else:
+                next_embed = discord.Embed(description=current_text, color=discord.Color.green())
+                await ctx.send(embed=next_embed)
+        logger.info(f'Команда "/stat_auto_month" обработана через файл. Загружено игроков: {len(members)}')
+
+    except Exception as error:
+        logger.error(f'Ошибка в команде "/stat_auto_month": "{error}"')
+        await ctx.respond(f'Произошла ошибка при обработке файла: {error}')
 
 
 @commands.slash_command()
@@ -829,7 +1053,8 @@ async def get_statistic_authority_error(
 def setup(bot: discord.Bot):
     bot.add_application_command(attention)
     bot.add_application_command(edit_embed_description)
-    bot.add_application_command(symbols_list)
+    bot.add_application_command(tabards_list)
     bot.add_application_command(auto_simbols_list)
     bot.add_application_command(get_statistic_authority)
+    bot.add_application_command(stat_auto_month)
 
