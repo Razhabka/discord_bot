@@ -717,11 +717,11 @@ class GuildMember:
 
 
 @commands.slash_command(
-    name="auto_simbols_list",
+    name="auto_tabard_list",
     description="Загрузить файл file.txt (GuildStats) и вывести ТОПы по чистому авторитету.",
 )
 @commands.has_any_role(LEADER_ROLE, OFICER_ROLE, TREASURER_ROLE)
-async def auto_simbols_list(
+async def auto_tabard_list(
         ctx: discord.ApplicationContext,
         file: discord.Option(
             discord.Attachment,
@@ -1028,7 +1028,7 @@ async def get_statistic_authority(
         logger.error(f'Ошибка в команде "/get_statistic_authority": "{error}"')
 
 
-@auto_simbols_list.error
+@auto_tabard_list.error
 async def auto_simbols_list_error(
     ctx: discord.ApplicationContext,
     error: Exception
@@ -1054,7 +1054,7 @@ def setup(bot: discord.Bot):
     bot.add_application_command(attention)
     bot.add_application_command(edit_embed_description)
     bot.add_application_command(tabards_list)
-    bot.add_application_command(auto_simbols_list)
-    bot.add_application_command(get_statistic_authority)
+    bot.add_application_command(auto_tabard_list)
+    # bot.add_application_command(get_statistic_authority)
     bot.add_application_command(stat_auto_month)
 
