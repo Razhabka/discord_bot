@@ -264,18 +264,7 @@ class GroupManagementView(View):
             if (guild_leader_role in interaction.user.roles
             ):
                 async with async_session_factory() as session:
-                    channels_data = await set_group_orm.get_group_channels(session, self.group_id)
                     members_in_db = await set_group_orm.get_members_by_group(session, self.group_id)
-
-                for c_key in ['text', 'voice']:
-                    if channels_data and channels_data.get(c_key):
-                        try:
-                            channel = guild.get_channel(channels_data[c_key]) or await guild.fetch_channel(
-                                channels_data[c_key])
-                            if channel:
-                                await channel.delete()
-                        except Exception as ch_err:
-                            logger.error(f"Не удалось удалить канал {c_key}: {ch_err}")
 
                 roles_to_delete_ids = set()
                 for db_m in members_in_db:
@@ -337,6 +326,31 @@ class AddPlayerSelect(Select):
             updated_member_ids = [int(m) for m in self.member_ids if m is not None]
 
             async with async_session_factory() as session:
+
+                all_active_groups = await set_group_orm.get_all_active_groups(session)
+
+                busy_user_ids = set()
+
+                for g_id, g_data in all_active_groups.items():
+                    if str(g_id) == str(self.group_id):
+                        continue
+
+                    if g_data["leader_id"]:
+                        busy_user_ids.add(int(g_data["leader_id"]))
+
+                    for m_id in g_data["member_ids"]:
+                        if m_id:
+                            busy_user_ids.add(int(m_id))
+
+                already_in_other_group = [user for user in new_selected_users if user.id in busy_user_ids]
+
+                if already_in_other_group:
+                    mentions_str = ", ".join([user.mention for user in already_in_other_group])
+                    return await interaction.respond(
+                        f'❌ Ошибка! Следующие игроки уже состоят в других группах: {mentions_str}',
+                        delete_after=7
+                    )
+
                 existing_role_id = None
                 if self.member_ids:
                     existing_role_id = await set_group_orm.get_role_id_by_user_and_group(session, self.member_ids[0],
@@ -556,11 +570,6 @@ class CategorySelect(Select):
                                                            overwrites=overwrites)
             voice_channel = await guild.create_voice_channel(name=channel_name_voice, category=category,
                                                              overwrites=overwrites)
-            async with async_session_factory() as session:
-                await set_group_orm.update_group_channel_by_type(session, self.group_id, text_channel.id, 'text')
-                await set_group_orm.update_group_channel_by_type(session, self.group_id, voice_channel.id, 'voice')
-                await session.commit()
-
             await interaction.respond(
                 f"✅ Приватные каналы {text_channel.mention} и {voice_channel.mention} успешно созданы!", delete_after=5)
 
