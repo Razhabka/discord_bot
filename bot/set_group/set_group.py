@@ -326,6 +326,31 @@ class AddPlayerSelect(Select):
             updated_member_ids = [int(m) for m in self.member_ids if m is not None]
 
             async with async_session_factory() as session:
+
+                all_active_groups = await set_group_orm.get_all_active_groups(session)
+
+                busy_user_ids = set()
+
+                for g_id, g_data in all_active_groups.items():
+                    if str(g_id) == str(self.group_id):
+                        continue
+
+                    if g_data["leader_id"]:
+                        busy_user_ids.add(int(g_data["leader_id"]))
+
+                    for m_id in g_data["member_ids"]:
+                        if m_id:
+                            busy_user_ids.add(int(m_id))
+
+                already_in_other_group = [user for user in new_selected_users if user.id in busy_user_ids]
+
+                if already_in_other_group:
+                    mentions_str = ", ".join([user.mention for user in already_in_other_group])
+                    return await interaction.respond(
+                        f'❌ Ошибка! Следующие игроки уже состоят в других группах: {mentions_str}',
+                        delete_after=7
+                    )
+
                 existing_role_id = None
                 if self.member_ids:
                     existing_role_id = await set_group_orm.get_role_id_by_user_and_group(session, self.member_ids[0],

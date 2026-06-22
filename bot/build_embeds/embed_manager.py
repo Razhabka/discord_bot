@@ -16,7 +16,8 @@ from .functions import (
 )
 from .embeds import attention_embed, symbols_list_embed
 from regular_commands.regular_commands import command_error
-from core import LEADER_ROLE, OFICER_ROLE, TREASURER_ROLE, async_session_factory, RANK_MAPPING, CLOAK_MAPPING
+from core import (LEADER_ROLE, OFICER_ROLE, TREASURER_ROLE, async_session_factory, RANK_MAPPING, CLOAK_MAPPING,
+                  GUEST_ROLE, VETERAN_ROLE, SERGEANT_ROLE)
 from core.orm import authority_stat_orm
 
 
@@ -707,6 +708,146 @@ class ChooseSimbolsAmount(Modal):
                 f'за накидки/чемпы, но получил ошибку {error}!'
             )
 
+@commands.slash_command(
+    name="clear_role",
+    description="Загрузить файл file.txt (GuildStats) и вывести ТОПы по чистому авторитету.",
+)
+@commands.has_any_role(LEADER_ROLE, OFICER_ROLE, TREASURER_ROLE)
+async def clear_role(
+        ctx: discord.ApplicationContext,
+        file: discord.Option(
+            discord.Attachment,
+            description="Файл user.cfg или текстовый лог GuildStats",
+            name_localizations={'ru': 'файл_логов'}
+        )
+) -> None:
+    try:
+        await ctx.defer(ephemeral=True)
+
+        if not file.filename.endswith(('.cfg', '.txt')):
+            await ctx.respond("Ошибка: Пожалуйста, прикрепите файл с расширением .txt")
+            return
+
+        bytes_data = await file.read()
+
+        try:
+            content = bytes_data.decode('utf-8')
+        except UnicodeDecodeError:
+            content = bytes_data.decode('cp1251')
+
+        members = []
+        pattern = re.compile(r"Info:\s*([^|]+)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(\d+)")
+
+        for line in content.splitlines():
+            match = pattern.search(line)
+            if match:
+                nick = match.group(1).strip()
+
+                if nick.lower() == "nick":
+                    continue
+
+                rank_id = int(match.group(2))
+                loyalty = int(match.group(3))
+                raw_authority = int(match.group(4))
+                cloak_id = int(match.group(5))
+
+                rank_str = RANK_MAPPING.get(rank_id, f"Неизвестный ранг ({rank_id})")
+                cloak_str = CLOAK_MAPPING.get(cloak_id, f"Неизвестная накидка ({cloak_id})")
+
+                members.append(GuildMember(
+                    nick=nick,
+                    rank=rank_str,
+                    loyalty=loyalty,
+                    authority=raw_authority,
+                    cloak=cloak_str
+                ))
+        role_sergeant = discord.utils.get(ctx.guild.roles, name=SERGEANT_ROLE)
+        role_veteran = discord.utils.get(ctx.guild.roles, name=VETERAN_ROLE)
+        role_guest = discord.utils.get(ctx.guild.roles, name=GUEST_ROLE)
+
+        process_member_ids = set()
+
+        if ctx.guild:
+            all_members = {m.display_name.lower(): m for m in ctx.guild.members}
+
+
+        change_ranks = []
+
+
+        for m in members:
+            nick_lower = m.nick.lower()
+
+            if nick_lower not in all_members:
+                continue
+
+            discord_member = all_members[nick_lower]
+            process_member_ids.add(discord_member.id)
+            file_rank = m.rank
+            if file_rank == SERGEANT_ROLE:
+                if role_sergeant in discord_member.roles:
+                    continue
+                if role_veteran in discord_member.roles:
+                    await discord_member.remove_roles(role_veteran)
+                    await discord_member.add_roles(role_sergeant)
+                    change_ranks.append(f'{discord_member.display_name}({VETERAN_ROLE} -> {SERGEANT_ROLE})')
+                    logger.info(
+                        f'У игрока {discord_member.display_name} была удалена роль {role_veteran} и выдана ему роль {role_sergeant}'
+                    )
+            elif file_rank == VETERAN_ROLE:
+                if role_veteran in discord_member.roles:
+                    continue
+                if role_sergeant in discord_member.roles:
+                    await discord_member.remove_roles(role_sergeant)
+                    await discord_member.add_roles(role_veteran)
+                    change_ranks.append(f'{discord_member.display_name}({SERGEANT_ROLE} -> {VETERAN_ROLE})')
+                    logger.info(
+                        f'У игрока {discord_member.display_name} была удалена роль {role_sergeant} и выдана ему роль {role_veteran}'
+                    )
+
+        for discord_member in ctx.guild.members:
+            if discord_member.bot:
+                continue
+
+            if discord_member.id in process_member_ids:
+                logger.info(
+                    f'{discord_member.display_name} был пропущен'
+                )
+                continue
+
+            if role_sergeant in discord_member.roles:
+                await discord_member.remove_roles(role_sergeant)
+                await discord_member.add_roles(role_guest)
+                change_ranks.append(f'{discord_member.display_name}({SERGEANT_ROLE} -> {GUEST_ROLE})')
+                logger.info(
+                    f'У игрока {discord_member.display_name} была удалена роль {role_sergeant} и выдана ему роль {role_guest}'
+                )
+            if role_veteran in discord_member.roles:
+                await discord_member.remove_roles(role_veteran)
+                await discord_member.add_roles(role_guest)
+                change_ranks.append(f'{discord_member.display_name}({VETERAN_ROLE} -> {GUEST_ROLE})')
+                logger.info(
+                    f'У игрока {discord_member.display_name} была удалена роль {role_veteran} и выдана ему роль {role_guest}'
+                )
+
+        embed = discord.Embed(
+            title="📊 Отчет по синхронизации ролей",
+            color = discord.Color.green()
+        )
+        has_change = False
+
+        if change_ranks:
+            has_change = True
+            rank_change = '\n'.join(change_ranks)
+            embed.add_field(name= "Изменение ролей", value=rank_change, inline=False)
+
+        if not has_change:
+            embed.description = "Никаких изменений не производилось"
+
+        await ctx.respond(embed=embed, ephemeral=True)
+    except Exception as error:
+        logger.error(f'Ошибка в команде "/clear_role": "{error}"')
+        await ctx.respond(f'Произошла ошибка при обработке файла: {error}')
+
 @dataclass
 class GuildMember:
     nick: str
@@ -1055,6 +1196,6 @@ def setup(bot: discord.Bot):
     bot.add_application_command(edit_embed_description)
     bot.add_application_command(tabards_list)
     bot.add_application_command(auto_tabard_list)
-    # bot.add_application_command(get_statistic_authority)
+    bot.add_application_command(clear_role)
     bot.add_application_command(stat_auto_month)
 
