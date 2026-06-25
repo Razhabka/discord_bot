@@ -22,7 +22,7 @@ from .embeds import (
     pve_notification_embed, publish_pve_embed, ask_pve_embed
 )
 from .static import StaticNamesPve
-from role_application.functions import require_role
+from role_application.functions import require_role, character_lookup
 
 
 class PVEDate(Modal):
@@ -83,7 +83,6 @@ class PVEDate(Modal):
                 )
                 app_channel_view = View(PveAppButton(min_gear_score=min_gearscore), timeout=None)
                 await interaction.channel.send(embed=app_list_embed(convert_pve_date), view=StartPVEButton(min_gear_score=min_gearscore))
-                # await interaction.channel.send(embed=app_list_embed(convert_pve_date))
                 await pve_app_channel.send(embed=start_pve_embed(convert_pve_date, formatted_gearscore), view=app_channel_view)
                 await pve_app_orm.insert_message_id(
                     session=session,
@@ -134,8 +133,8 @@ class PveApplication(Modal):
         self.add_item(
             InputText(
                 style=InputTextStyle.singleline,
-                label='Укажи класс (Specify the class role)',
-                placeholder='Любой, если не заполнить (Any if empty)',
+                label='Укажи класс',
+                placeholder='Любой, если не заполнить',
                 required=False,
                 max_length=10
             )
@@ -144,8 +143,8 @@ class PveApplication(Modal):
         self.add_item(
             InputText(
                 style=InputTextStyle.singleline,
-                label='Укажи роль (Specify gameplay role)',
-                placeholder='Танк | ДД | Саппорт (Tank | DD | Support)',
+                label='Укажи роль',
+                placeholder='Танк | ДД | Саппорт',
                 required=True,
                 max_length=20
             )
@@ -154,10 +153,10 @@ class PveApplication(Modal):
         self.add_item(
             InputText(
                 style=InputTextStyle.singleline,
-                label='Укажи ГС (Specify gear score)',
-                placeholder='число (value)',
+                label='Укажите ник персонажа, на котором пойдете',
+                placeholder='Учитывай регистр (большие и маленькие буквы)',
                 required=True,
-                max_length=5
+                max_length=20
             )
         )
 
@@ -174,15 +173,18 @@ class PveApplication(Modal):
                     )
                 class_value: str = str(self.children[0].value)
                 role_value: str = str(self.children[1].value)
-                gear_score: str = str(self.children[2].value)
+                nickname: str = str(self.children[2].value)
+
+                player_info = character_lookup(1, nickname)
+
+                if interaction.user.display_name != nickname:
+                    class_value = f"({nickname}) {class_value}"
+
+                gear_score = player_info['gear_score']
+
                 if not class_value:
                     class_value = 'Любой класс'
 
-                if not gear_score.isdigit():
-                    return await interaction.respond(
-                        '❌\n\nЗначение ГС только целочисленное\n\nThe HS value is an integer only',
-                        delete_after=5
-                    )
                 if int(gear_score) > 100 and int(gear_score) < self.min_gear_score:
                     logger.info(f'У игрока"{interaction.user.display_name}" ГС: "{gear_score:}", что меньше минимального: "{self.min_gear_score}"')
                     return await interaction.respond(
@@ -245,20 +247,19 @@ class PveApplication(Modal):
                         'Error retrieving data from the database, please contact your server administrator!_',
                         delete_after=5
                     )
-                # Zalupa
+
                 pve_list_channel = guild.get_channel(pve_list_channel_obj.message_id)
                 start_pve_message = await pve_list_channel.fetch_message(start_pve_message_obj.message_id)
                 during_embed = start_pve_message.embeds[0]
-                # during_embed.fields[0].value += f'\n{member.mention}: {class_value} ({role}), [{formatted_gearscore}]'
                 field_value = during_embed.fields[field_index].value
                 pattern = re.compile(rf'{member.mention}: (🟡|🔴)')
                 match = pattern.search(field_value)
                 if match:
                     new_value = field_value.replace(
-                        match.group(0), f'{member.mention}: {role} ({gear_score})'
+                        match.group(0), f'{member.mention}: {class_value} {role} ({int(float(gear_score)):,})'
                     )
                 else:
-                    new_value = field_value + f'\n{member.mention}: {role} ({gear_score})'
+                    new_value = field_value + f'\n{member.mention}: {class_value} {role} ({int(float(gear_score)):,})'
                 during_embed.fields[field_index].value = new_value
                 await start_pve_message.edit(embed=during_embed)
                 await pve_app_orm.insert_appmember_id(session, user.id)
@@ -279,7 +280,7 @@ class PveAppButton(Button):
     def __init__(self, min_gear_score: int | None = None):
         self.min_gear_score = min_gear_score
         super().__init__(
-            label="Подать заявку на ПВЕ (Apply for a PVE)",
+            label="Подать заявку на ПВЕ",
             style=ButtonStyle.green,
             custom_id="ПодатьЗаявкуНаПВЕ"
         )
@@ -739,17 +740,17 @@ class RaidChampionDominionApplication(Modal):
         self.add_item(
             InputText(
                 style=discord.InputTextStyle.short,
-                label='Укажи ГС',
-                placeholder='Обязательно укажите ГС(можете округлить)',
+                label='Укажите ник персонажа, на котором пойдете',
+                placeholder='Учитывай регистр (большие и маленькие буквы)',
                 required=True,
-                max_length=6
+                max_length=20
             )
         )
 
         self.add_item(
             InputText(
                 style=discord.InputTextStyle.multiline,
-                label='Укажи классы, на которых хочешь идти на ПВЕ',
+                label='Укажи классы и роли, на которых хочешь идти на ПВЕ',
                 placeholder='Если не заполнять, значит любой класс',
                 required=False,
                 max_length=80
@@ -760,14 +761,12 @@ class RaidChampionDominionApplication(Modal):
         try:
             await interaction.response.defer(invisible=False, ephemeral=True)
             async with async_session_factory() as session:
-                gear_score: str = str(self.children[0].value)
-                if not gear_score:
-                    gear_score = '0'
-                if not gear_score.isdigit():
-                    return await interaction.respond(
-                        '_Строка для ввода ГС принимает только целые числа, повтори снова ⚠️_',
-                        delete_after=2
-                    )
+
+                nickname: str = str(self.children[0].value)
+                player_info = character_lookup(1, nickname)
+
+                gear_score = player_info['gear_score']
+
                 if int(gear_score) > 100 and int(gear_score) < self.min_gear_score:
                     logger.info(f'У игрока"{interaction.user.display_name}" ГС: "{gear_score:}", что меньше минимального: "{self.min_gear_score}"')
                     return await interaction.respond(
@@ -786,6 +785,10 @@ class RaidChampionDominionApplication(Modal):
                 class_role: str = str(self.children[1].value)
                 if not class_role:
                     class_role = 'Любой класс'
+
+                if interaction.user.display_name != nickname:
+                    class_role = f"({nickname}) {class_role}"
+
                 guild = interaction.user.mutual_guilds[0]
                 member: discord.Member = guild.get_member(interaction.user.id)
                 field_index = 0 if discord.utils.get(member.roles, name=PVE_ROLE) else 1
@@ -801,17 +804,17 @@ class RaidChampionDominionApplication(Modal):
                 start_rcd_message: discord.Message = (
                     await rcd_list_channel.fetch_message(start_rcd_message_obj.message_id)
                 )
-                #Zalupa 2
+
                 during_embed: discord.Embed = start_rcd_message.embeds[0]
                 field_value = during_embed.fields[field_index].value
                 pattern = re.compile(rf'{member.mention}: (🟡|🔴)')
                 match = pattern.search(field_value)
                 if match:
                     new_value = field_value.replace(
-                        match.group(0), f'{member.mention}: {class_role} ({gear_score})'
+                        match.group(0), f'{member.mention}: {class_role} ({int(float(gear_score)):,})'
                     )
                 else:
-                    new_value = field_value + f'\n{member.mention}: {class_role} ({gear_score})'
+                    new_value = field_value + f'\n{member.mention}: {class_role} ({int(float(gear_score)):,})'
                 during_embed.fields[field_index].value = new_value
                 await start_rcd_message.edit(embed=during_embed)
                 await pve_app_orm.insert_appmember_id(session, interaction.user.id)
