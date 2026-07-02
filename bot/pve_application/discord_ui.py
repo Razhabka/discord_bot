@@ -392,6 +392,7 @@ class NotificationButton(Button):
         try:
             async def send_notification(member, pve_role: str, date, comment: str | None):
                 try:
+                    logger.info(f"{member.display_name} из send_notification")
                     await member.send(
                         embed=pve_notification_embed(
                             interaction_user=interaction.user.display_name,
@@ -399,6 +400,7 @@ class NotificationButton(Button):
                             jump_url=jump_url,
                             pve_role=pve_role,
                             comment=comment
+
                         ),
                         # TODO: 10800
                         delete_after=10800
@@ -625,13 +627,14 @@ class StartPVEButton(View):
                     during_embed.fields[0].value = f'{pve.mention}: 🟡'
 
                 try:
+                    logger.info(f'{pve.display_name} из ask_all_veteran_callback')
                     await pve.send(
                         embed=ask_pve_embed(
                             member=interaction.user,
                             date=date_obj.date,
                             min_gearscore=self.min_gear_score
                         ),
-                        view=PrivateMessageView(self.min_gear_score),
+                        view=PrivateMessageView(self.min_gear_score, pve.display_name),
                         delete_after=86400
                     )
                     logger.info(f'Пользователю "{pve.display_name}" был отправлен вопрос об ПВЕ')
@@ -660,9 +663,10 @@ class PrivateMessageView(View):
     """
     Кнопка для отказа или соглашения идти в ПВЕ.
     """
-    def __init__(self, min_gear_score: int | None = None):
+    def __init__(self, min_gear_score: int | None = None, member: str| None = None):
         super().__init__(timeout=None),
         self.min_gear_score = min_gear_score
+        self.member = member
 
     @button(
         label='Отправить заявку на ПВЕ', style=discord.ButtonStyle.green,
@@ -676,9 +680,10 @@ class PrivateMessageView(View):
         try:
             async with async_session_factory() as session:
                 all_member_ids = await pve_app_orm.get_all_appmember_ids(session)
+                logger.info(f'{self.member} PrivateMessageView')
                 if interaction.user.id in all_member_ids:
                     return await interaction.respond('_Ты уже подал заявку! ✅_', delete_after=1)
-                await interaction.response.send_modal(RaidChampionDominionApplication(self.min_gear_score))
+                await interaction.response.send_modal(RaidChampionDominionApplication(self.min_gear_score, member=self.member))
         except Exception as error:
             await interaction.respond('❌', delete_after=1)
             logger.error(
@@ -734,9 +739,10 @@ class RaidChampionDominionApplication(Modal):
     """
     Модальное окно для ввода данных на заявку ПВЕ.
     """
-    def __init__(self, min_gear_score: int | None = None):
+    def __init__(self, min_gear_score: int | None = None, member: str | None = None):
         super().__init__(title='Заявка на ПВЕ', timeout=None)
         self.min_gear_score = min_gear_score
+        self.member = member
         self.add_item(
             InputText(
                 style=discord.InputTextStyle.short,
@@ -750,7 +756,7 @@ class RaidChampionDominionApplication(Modal):
         self.add_item(
             InputText(
                 style=discord.InputTextStyle.multiline,
-                label='Укажи классы и роли, на которых хочешь идти на ПВЕ',
+                label='Укажи классы и роли, которыми пойдешь',
                 placeholder='Если не заполнять, значит любой класс',
                 required=False,
                 max_length=80
@@ -783,10 +789,11 @@ class RaidChampionDominionApplication(Modal):
                         delete_after=5
                     )
                 class_role: str = str(self.children[1].value)
+                logger.info(f'{self.member}')
                 if not class_role:
                     class_role = 'Любой класс'
 
-                if interaction.user.display_name != nickname:
+                if self.member != nickname:
                     class_role = f"({nickname}) {class_role}"
 
                 guild = interaction.user.mutual_guilds[0]
