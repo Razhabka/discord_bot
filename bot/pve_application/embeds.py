@@ -13,7 +13,7 @@ def start_pve_embed(date: str, min_gearscore: str) -> Embed:
     Функция для создания вложения о старте ПВЕ заявок.
     """
     embed = Embed(
-        title=f'_**Заявки на ПВЕ (PVE Applications)\n{date}**_',
+        title=f'_**Заявки на ПВЕ\n{date}**_',
         description=(
             f'_Минимальный ГС: {min_gearscore}\n'
             'Тыкай на кнопку ниже, чтобы подать заявку на ПВЕ!\n\n'

@@ -70,7 +70,7 @@ class AcceptRoleButton(discord.ui.Button):
                 await member.remove_roles(role_guest)
                 curent_embed.add_field(
                     name='_Результат рассмотрения_ ✅',
-                    value=f'_{interaction.user.mention} выдал роль!_',
+                    value=f'_{interaction.user.mention} выдал(а) роль!_',
                     inline=False
                 )
                 self.roleapp_view.disable_all_items()
