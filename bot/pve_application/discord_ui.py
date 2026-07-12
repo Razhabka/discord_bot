@@ -232,7 +232,6 @@ class PveApplication(Modal):
                 
                 guild = user.mutual_guilds[0]
                 member = guild.get_member(user.id)
-                field_index = 0 if discord.utils.get(member.roles, name=PVE_ROLE) else 1
                 start_pve_message_obj = await pve_app_orm.get_message_data_obj(
                     session=session,
                     pk=StaticNamesPve.START_PVE_MESSAGE
@@ -251,7 +250,7 @@ class PveApplication(Modal):
                 pve_list_channel = guild.get_channel(pve_list_channel_obj.message_id)
                 start_pve_message = await pve_list_channel.fetch_message(start_pve_message_obj.message_id)
                 during_embed = start_pve_message.embeds[0]
-                field_value = during_embed.fields[field_index].value
+                field_value = during_embed.fields[0].value
                 pattern = re.compile(rf'{member.mention}: (🟡|🔴)')
                 match = pattern.search(field_value)
                 if match:
@@ -260,14 +259,14 @@ class PveApplication(Modal):
                     )
                 else:
                     new_value = field_value + f'\n{member.mention}: {class_value} {role} ({int(float(gear_score)):,})'
-                during_embed.fields[field_index].value = new_value
+                during_embed.fields[0].value = new_value
                 await start_pve_message.edit(embed=during_embed)
                 await pve_app_orm.insert_appmember_id(session, user.id)
                 await session.commit()
                 await interaction.respond('_✅\n\nЗаявка принята!\n\nThe application was accepted!_', delete_after=2)
                 logger.info(f'Принята заявка на ПВЕ от "{user.display_name}"')
         except Exception as error:
-            await interaction.respond('❌', delete_after=1)
+            await interaction.respond('❌ Заявка была не принята, напишите Лидеру Гильдии', delete_after=5)
             logger.error(
                 f'При отправке заявки на ПВЕ пользователем '
                 f'"{user.display_name}" произошла ошибка "{error}"'
