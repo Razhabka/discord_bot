@@ -134,6 +134,8 @@ TRANSLATION_ROLES: dict[str, str] = {
 }
 
 # Роли на сервере Discord для проверки
+NOT_NOTICE_FOR_RCD: int= 1528343688072138772
+
 AUCTIONEER_ROLE: str = 'Аукцион'
 
 LEADER_ROLE: str = 'Лидер гильдии'
