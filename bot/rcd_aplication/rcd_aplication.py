@@ -17,7 +17,7 @@ from role_application.functions import has_required_role
 from core import (
     VETERAN_ROLE, ANSWERS_IF_NO_ROLE, INDEX_CLASS_ROLE,
     SERGEANT_ROLE, LEADER_ROLE, OFICER_ROLE, TREASURER_ROLE,
-    RCD_APPLICATION_CHANNEL_ID, GUEST_ROLE
+    RCD_APPLICATION_CHANNEL_ID, GUEST_ROLE, NOT_NOTICE_FOR_RCD
 )
 
 
@@ -904,16 +904,20 @@ class StartRCDButton(View):
         interaction: discord.Interaction
     ):
         try:
+            guild = interaction.guild
             await interaction.response.defer(invisible=False, ephemeral=True)
             async with async_session_factory() as session:
                 during_embed: discord.Embed = interaction.message.embeds[0]
                 veteran_role: discord.Role | None = discord.utils.get(interaction.guild.roles, name=VETERAN_ROLE)
+                not_notice_role: discord.Role | None = guild.get_role(NOT_NOTICE_FOR_RCD)
                 all_askmember_ids: list = await rcd_app_orm.get_all_askmember_ids(session)
                 all_appmember_ids: list = await rcd_app_orm.get_all_appmember_ids(session)
                 date_obj = await rcd_app_orm.get_rcd_date_obj(session=session, pk=StaticNames.RCD_DATE)
                 all_members = all_askmember_ids + all_appmember_ids
                 for veteran in veteran_role.members:
                     if veteran.id in all_members:
+                        continue
+                    if not_notice_role in veteran.roles:
                         continue
                     during_embed.fields[0].value += (f'\n{veteran.mention}: 🟡')
                     try:
