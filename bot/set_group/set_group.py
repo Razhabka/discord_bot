@@ -1,4 +1,7 @@
+from random import choice
+
 import discord
+from discord import SlashCommand
 from discord.ext import commands
 from discord.ui import View, button, Select
 from loguru import logger
@@ -250,7 +253,7 @@ class GroupManagementView(View):
                 member_ids=self.member_ids
             ))
             return await interaction.respond(view=view, content="**Выберите участников для удаления:**",
-                                             delete_after=60)
+                                             delete_after=60, ephemeral= True)
         except Exception as error:
             logger.error(f'Ошибка при нажатии на Удалить игрока: {error}')
 
@@ -410,6 +413,269 @@ class RemovePlayerSelect(Select):
 
     def __init__(self, message_embed: discord.Embed, interaction_message: discord.Message, group_id: str,
                  leader_id: int, member_ids: list):
+
+        option = [
+            discord.SelectOption(
+                label="Удалить игрока",
+                value="remove_player",
+                description="Базовое удаление игрока"
+            ),
+            discord.SelectOption(
+                label="Удалить игрока из списка",
+                value="remove_player_from_list",
+                description="Удаление игрока ручное"
+            ),
+            discord.SelectOption(
+                label="Замена лидера",
+                value="replacement_leader",
+                description="Выберите человека, на которого хотите заменить"
+            )
+        ]
+        super().__init__(placeholder="Выберите действие...", min_values=1, max_values=1, options=option)
+        self.message_embed = message_embed
+        self.interaction_message = interaction_message
+        self.group_id = group_id
+        self.leader_id = leader_id
+        self.member_ids = member_ids
+
+    async def callback(self, interaction: discord.Interaction):
+        choice = self.values[0]
+
+        if choice == "remove_player":
+            view = View(RemovePlayer(
+                message_embed=self.message_embed,
+                interaction_message=self.interaction_message,
+                group_id=self.group_id,
+                leader_id=self.leader_id,
+                member_ids=self.member_ids
+            ))
+            return await interaction.respond(view=view, content="**Выберите участников для удаления:**",
+                                             delete_after=60, ephemeral=True)
+        elif choice == "remove_player_from_list":
+            view = View(RemovePlayerFromList(
+                message_embed=self.message_embed,
+                interaction_message=self.interaction_message,
+                group_id=self.group_id,
+                leader_id=self.leader_id,
+                member_ids=self.member_ids,
+                guild=interaction.guild
+            ))
+            return await interaction.respond(view=view, content="**Выберите участников для удаления:**",
+                                             delete_after=60, ephemeral=True)
+        elif choice == "replacement_leader":
+            view = View(ReplacementLeader(
+                message_embed=self.message_embed,
+                interaction_message=self.interaction_message,
+                group_id=self.group_id,
+                leader_id=self.leader_id,
+                member_ids=self.member_ids,
+                guild=interaction.guild
+            ))
+
+            return await interaction.respond(view=view, content="**Выбери человека для замены Лидера:**",
+                                             delete_after=60, ephemeral=True)
+
+class ReplacementLeader(Select):
+    def __init__(self, message_embed: discord.Embed, interaction_message: discord.Message, group_id: str,
+                 leader_id: int, member_ids: list, guild: discord.Guild):
+        cleaned_members = [int(m) for m in member_ids if m is not None]
+
+        super().__init__(
+            select_type=discord.ComponentType.user_select,
+            placeholder='Выберите участников для замены Лидера',
+            min_values=1,
+            max_values=len(cleaned_members) if len(cleaned_members) > 0 else 1
+        )
+        self.message_embed = message_embed
+        self.interaction_message = interaction_message
+        self.group_id = group_id
+        self.leader_id = leader_id
+        self.member_ids = [int(m) for m in member_ids if m is not None]
+        self.guild = guild
+
+
+    async def callback(self, interaction: discord.Interaction):
+
+        guild_leader_role = discord.utils.get(self.guild.roles, name=LEADER_ROLE)
+
+        if (guild_leader_role not in interaction.user.roles):
+            return await interaction.respond(
+                f"❌ Ты куда полез, Пес Ебанный, тебе запрещено тыкать эти кнопки, давай отдыхай отсюда",
+                delete_after=7)
+
+        try:
+            await interaction.response.defer(invisible=True, ephemeral=True)
+            embed = self.message_embed
+            embed.fields[0].value =''
+
+            new_leader = self.values[0]
+            new_leader_id = new_leader.id
+            old_leader_id = self.leader_id
+            old_role_in_user = None
+
+            if new_leader_id == self.leader_id:
+                return await interaction.respond("Это тот же самый человек ХМХМХМХ", delete_after=5)
+
+            updated_member_ids = list(self.member_ids)
+
+            if(new_leader_id in updated_member_ids):
+                updated_member_ids.remove(new_leader_id)
+            async with async_session_factory() as session:
+                old_leader_role_id = await set_group_orm.get_role_id_by_user_and_group(session, self.leader_id,
+                                                                                       self.group_id)
+                db_members = await set_group_orm.get_members_by_group(session, self.group_id)
+                for db_m in db_members:
+                    if db_m.user_id == old_leader_id:
+                        await session.delete(db_m)
+                    if db_m.user_id == new_leader_id:
+                        old_role_in_user = await set_group_orm.get_role_id_by_user_and_group(session, new_leader_id, self.group_id,)
+                        await session.delete(db_m)
+                await set_group_orm.insert_group_member(
+                    session,
+                    user_id=new_leader_id,
+                    username=new_leader.display_name,
+                    role_id=old_leader_role_id if old_leader_role_id else 0,
+                    group_id=self.group_id,
+                    is_leader=True
+                )
+                await session.commit()
+            group_leader_user = self.guild.get_member(new_leader_id) or await self.guild.fetch_member(new_leader_id)
+            old_leader_user = self.guild.get_member(old_leader_id)
+            embed.description = f'1. {group_leader_user.mention}'
+            members_mentions = []
+            for m_id in updated_member_ids:
+                m_user = self.guild.get_member(m_id) or await self.guild.fetch_member(m_id)
+                if m_user:
+                    members_mentions.append(m_user.mention)
+                else:
+                    members_mentions.append(f"<@{m_id}>")
+
+            for number, member in enumerate(members_mentions):
+                embed.fields[0].value += f'\n{number + 2}. {member}'
+
+            total_slots_filled = len(updated_member_ids) + 1
+            if total_slots_filled < 6:
+                for extra_number in range(6 - total_slots_filled):
+                    embed.fields[0].value += f'\n{extra_number + total_slots_filled + 1}.'
+            role_leader = discord.utils.get(self.guild.roles, id=old_leader_role_id)
+            base_role = discord.utils.get(self.guild.roles, id=old_role_in_user)
+            logger.info(f'role_leader: {role_leader.mention}')
+            if group_leader_user:
+                if old_leader_user:
+                    logger.info(f'Зашел в условие if old_leader_user')
+                    await old_leader_user.remove_roles(role_leader)
+                await group_leader_user.add_roles(role_leader)
+            if old_role_in_user:
+                await group_leader_user.remove_roles(base_role)
+
+            new_view = GroupManagementView(self.group_id, new_leader_id, updated_member_ids)
+            await self.interaction_message.edit(embed=embed, view=new_view)
+
+            await interaction.respond(
+                f':monkey_face: Глава обезьян успешно заменен на {group_leader_user.mention}! Старый лидер ПОШЕЛ НАХУЙ.',
+                delete_after=10
+            )
+        except Exception as error:
+            logger.error(f'Ошибка при замене лидера группы: {error}')
+            await interaction.respond('❌ Произошла ошибка при замене лидера.', delete_after=3)
+
+class RemovePlayerFromList(Select):
+    def __init__(self, message_embed: discord.Embed, interaction_message: discord.Message, group_id: str,
+                 leader_id: int, member_ids: list, guild: discord.Guild):
+        self.message_embed = message_embed
+        self.interaction_message = interaction_message
+        self.group_id = group_id
+        self.leader_id = leader_id
+        self.member_ids = [int(m) for m in member_ids if m is not None]
+        self.guild = guild
+
+        options = []
+        for m_id in self.member_ids:
+            member_obj = guild.get_member(m_id)
+            name = member_obj.display_name if member_obj else f"ID: {m_id} (Покинул сервер)"
+
+            options.append(
+                discord.SelectOption(
+                    label=name[:100],
+                    value=str(m_id),
+                    description=f"Удалить ID {m_id} списка",
+                    emoji="⚠️"
+                )
+            )
+
+        if not options:
+            options.append(discord.SelectOption(label="Нет участников", value="none", emoji="❌"))
+
+
+        super().__init__(
+            placeholder='Выберите игрока для удаления',
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+
+        guild_leader_role = discord.utils.get(self.guild.roles, name=LEADER_ROLE)
+
+        if (guild_leader_role not in interaction.user.roles):
+            return await interaction.respond(
+                f"❌ Ты куда полез, Пес Ебанный, тебе запрещено тыкать эти кнопки, давай отдыхай отсюда",
+                delete_after=7)
+
+        try:
+            await interaction.response.defer(invisible=False, ephemeral=True)
+
+            if self.values[0] == "none":
+                return await interaction.respond('❌ В группе нет участников для удаления.', delete_after=3)
+
+            to_remove_id = int(self.values[0])
+            embed = self.message_embed
+            embed.fields[0].value = ''
+
+            async with async_session_factory() as session:
+                db_members = await set_group_orm.get_members_by_group(session, self.group_id)
+                for db_m in db_members:
+                    if db_m.user_id == to_remove_id:
+                        await session.delete(db_m)
+                        logger.info(f"Игрок с ID {to_remove_id} удален из БД группы {self.group_id}")
+                await session.commit()
+
+            updated_member_ids = [m_id for m_id in self.member_ids if m_id != to_remove_id]
+
+            group_leader = self.guild.get_member(self.leader_id) or await self.guild.fetch_member(self.leader_id)
+            embed.description = f'1. {group_leader.mention}'
+
+            members_mentions = []
+            for m_id in updated_member_ids:
+                m_user = self.guild.get_member(m_id)
+                if m_user:
+                    members_mentions.append(m_user.mention)
+                else:
+                    members_mentions.append(f"<@{m_id}> (нет на сервере)")
+
+            for number, member in enumerate(members_mentions):
+                embed.fields[0].value += f'\n{number + 2}. {member}'
+
+            total_slots_filled = len(updated_member_ids) + 1
+            if total_slots_filled < 6:
+                for extra_number in range(6 - total_slots_filled):
+                    embed.fields[0].value += f'\n{extra_number + total_slots_filled + 1}.'
+
+            new_view = GroupManagementView(self.group_id, self.leader_id, updated_member_ids)
+            await self.interaction_message.edit(embed=embed, view=new_view)
+
+            await interaction.respond(
+                f'✅ Игрок с ID `{to_remove_id}` успешно удален из базы данных и списка группы!',
+                delete_after=5
+            )
+        except Exception as error:
+            logger.error(f'Ошибка при удалении игрока из списка по ID: {error}')
+            await interaction.respond('❌ Произошла ошибка при удалении игрока.', delete_after=3)
+
+class RemovePlayer(Select):
+    def __init__(self, message_embed: discord.Embed, interaction_message: discord.Message, group_id: str,
+                 leader_id: int, member_ids: list):
         cleaned_members = [int(m) for m in member_ids if m is not None]
 
         super().__init__(
@@ -418,6 +684,7 @@ class RemovePlayerSelect(Select):
             min_values=1,
             max_values=len(cleaned_members) if len(cleaned_members) > 0 else 1
         )
+
         self.message_embed = message_embed
         self.interaction_message = interaction_message
         self.group_id = group_id
@@ -437,7 +704,7 @@ class RemovePlayerSelect(Select):
                 return await interaction.respond(
                     'Ты хочешь удалить лидера, серьезно? А кто поведет в бой этих обезьян? :monkey:',
                     delete_after=7)
-            
+
             current_member_ids = [int(m_id) for m_id in self.member_ids if m_id is not None]
             invalid_users = [u_id for u_id in to_remove_ids if int(u_id) not in current_member_ids]
             if invalid_users:
@@ -461,7 +728,8 @@ class RemovePlayerSelect(Select):
                         await session.delete(db_m)
                 await session.commit()
 
-            updated_member_ids = [int(m_id) for m_id in self.member_ids if m_id is not None and int(m_id) not in to_remove_ids]
+            updated_member_ids = [int(m_id) for m_id in self.member_ids if
+                                  m_id is not None and int(m_id) not in to_remove_ids]
 
             group_leader = guild.get_member(self.leader_id) or await guild.fetch_member(self.leader_id)
             embed.description = f'1. {group_leader.mention}'
