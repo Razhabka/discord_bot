@@ -924,8 +924,15 @@ async def auto_tabard_list(
 
         members.sort(key=lambda m: m.authority, reverse=True)
 
-        top_5_pool = [m for m in members if m.authority >= 800000]
-        top_3_pool = [m for m in members if 500000 <= m.authority <= 799999]
+        top_5_pool = [m for m in members if m.authority >= 800000][:5]
+
+        members_without_top_5 = []
+        for m in members:
+            if m not in top_5_pool:
+                logger.info(f'{m.nick} | {m.authority} ' )
+                members_without_top_5.append(m)
+        top_3_pool = [m for m in members_without_top_5 if m.authority >= 500000]
+
 
         embed = discord.Embed(
             title="🏆 Статистика ЧИСТОГО авторитета гильдии",
