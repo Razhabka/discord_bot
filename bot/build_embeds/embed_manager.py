@@ -1,14 +1,19 @@
 import base64
+import csv
 import json
 import re
+import io
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 
 import chardet
 import discord
 from discord.ext import commands
 from discord.ui import Modal, InputText, View, select, button
 from loguru import logger
+from pydantic import color
+from sqlalchemy.dialects.mysql import DECIMAL
 
 from .functions import (
     validate_amount, generate_member_list, handle_selection,
@@ -17,7 +22,8 @@ from .functions import (
 from .embeds import attention_embed, symbols_list_embed
 from regular_commands.regular_commands import command_error
 from core import (LEADER_ROLE, OFICER_ROLE, TREASURER_ROLE, async_session_factory, RANK_MAPPING, CLOAK_MAPPING,
-                  GUEST_ROLE, VETERAN_ROLE, SERGEANT_ROLE)
+                  GUEST_ROLE, VETERAN_ROLE, SERGEANT_ROLE, RATIO_FOR_LOSE, RATIO_FOR_WIN, ID_FROM_RANGE, RANGE_TOP,
+                  RATIO_FOR_WIN_DEF, RATIO_FOR_LOSE_DEF_RANGE, RATIO_FOR_LOSE_DEF_EFFORTS)
 from core.orm import authority_stat_orm
 
 
@@ -438,10 +444,12 @@ class CreateOrEditSymbolsList(View):
 
     def __init__(
         self,
-        lookup_message: discord.Message | None = None
+        lookup_message: discord.Message | None = None,
+        date: datetime | None = None,
     ) -> None:
         super().__init__(timeout=None)
         self.lookup_message = lookup_message
+        self.date = date
 
     @select(
         select_type=select_type,
@@ -517,7 +525,8 @@ class CreateOrEditSymbolsList(View):
                 await interaction.channel.send(
                     embed=symbols_list_embed(
                         banner_list=self.banner_list,
-                        cape_list=self.cape_list
+                        cape_list=self.cape_list,
+                        date=self.date
                     )
                 )
             await interaction.respond('✅ Список успешно опубликован!', delete_after=2)
@@ -535,13 +544,30 @@ async def tabards_list(
         description='ID сообщения, которое нужно изменить',
         name_localizations={'ru':'id_сообщения'},
         required=False
-    ),  # type: ignore
+    ) = None,
+    date: discord.Option(
+        str,
+        description="Введи дату отсета для накидок(Формат 'ДД.ММ.ГГГГ')",
+        required=False
+    ) = None# type: ignore
 ) -> None:
     """
     Команда для создания или изменения списка за символы.
     """
     try:
         await ctx.defer(ephemeral=True)
+
+        logger.info(f'Получили дату {date}')
+        parsed_date = date
+        if date:
+            try:
+                parsed_date = datetime.strptime(date, "%d.%m.%Y").date()
+                logger.info(f'Преобразовали дату {parsed_date}')
+            except ValueError:
+                 return await ctx.respond(
+                    '_❌ Неверный формат даты! Используйте строго ДД.ММ.ГГГГ (например, 28.07.2026)._',
+                    delete_after=5
+                )
 
         if message_id:
             try:
@@ -560,10 +586,10 @@ async def tabards_list(
                 )
 
             await ctx.respond(
-                view=CreateOrEditSymbolsList(lookup_message=lookup_message)
+                view=CreateOrEditSymbolsList(lookup_message=lookup_message, date=parsed_date)
             )
         else:
-            await ctx.respond(view=CreateOrEditSymbolsList())
+            await ctx.respond(view=CreateOrEditSymbolsList(date=parsed_date))
         logger.info(
             f'Команда "/embed_manager" вызвана пользователем'
             f'"{ctx.user.display_name}"!'
@@ -640,14 +666,14 @@ class ChooseSimbolsAmount(Modal):
                     logger.error(f"Ошибка декодирования файла: {e}")
                     await interaction.respond("Ошибка: файл не может быть прочитан. Проверьте кодировку файла.")
                     return
-            
+
             info_start = content.find('Info: ')
             if info_start == -1:
                 await interaction.respond("Ошибка: в файле не найдено 'Info: '.")
                 return
             info_start += len('Info: ')
             json_str = content[info_start:].strip()  # Убираем лишние пробелы и символы после
-            
+
             json_start = json_str.find('[')
             if json_start == -1:
                 await interaction.respond("Ошибка: после 'Info: ' не найден JSON-массив.")
@@ -657,7 +683,7 @@ class ChooseSimbolsAmount(Modal):
                 await interaction.respond("Ошибка: после 'Info: ' не найден завершающий ']' для JSON-массива.")
                 return
             json_data = json_str[json_start:json_end]
-            
+
             try:
                 data_list = json.loads(json_data)
             except json.JSONDecodeError as e:
@@ -924,29 +950,20 @@ async def auto_tabard_list(
 
         members.sort(key=lambda m: m.authority, reverse=True)
 
-        top_5_pool = [m for m in members if m.authority >= 800000][:5]
+        top_3_pool = [m for m in members if m.authority >= 800000][:3]
 
-        members_without_top_5 = []
+        members_without_top_3 = []
         for m in members:
-            if m not in top_5_pool:
+            if m not in top_3_pool:
                 logger.info(f'{m.nick} | {m.authority} ' )
-                members_without_top_5.append(m)
-        top_3_pool = [m for m in members_without_top_5 if m.authority >= 500000]
+                members_without_top_3.append(m)
+        top_5_pool = [m for m in members_without_top_3 if m.authority >= 500000]
 
 
         embed = discord.Embed(
             title="🏆 Статистика ЧИСТОГО авторитета гильдии",
             color=discord.Color.green()
         )
-
-        top_5_text = ""
-        for i in range(5):
-            if i < len(top_5_pool):
-                m = top_5_pool[i]
-                top_5_text += f"**{i+1}. {m.nick}** — {m.authority:,} авт. ({m.rank}, {m.cloak})\n"
-            else:
-                top_5_text += f"*{i + 1}. Место пусто*\n"
-        embed.add_field(name="⭐ Топ для выдачи знамени", value=top_5_text, inline=False)
 
         top_3_text = ""
         for i in range(3):
@@ -955,7 +972,16 @@ async def auto_tabard_list(
                 top_3_text += f"**{i+1}. {m.nick}** — {m.authority:,} авт. ({m.rank}, {m.cloak})\n"
             else:
                 top_3_text += f"*{i + 1}. Место пусто*\n"
-        embed.add_field(name="🏅 Топ для выдачи чемпы", value=top_3_text, inline=False)
+        embed.add_field(name="⭐ Топ для выдачи знамени", value=top_3_text, inline=False)
+
+        top_5_text = ""
+        for i in range(5):
+            if i < len(top_5_pool):
+                m = top_5_pool[i]
+                top_5_text += f"**{i+1}. {m.nick}** — {m.authority:,} авт. ({m.rank}, {m.cloak})\n"
+            else:
+                top_5_text += f"*{i + 1}. Место пусто*\n"
+        embed.add_field(name="🏅 Топ для выдачи чемпы", value=top_5_text, inline=False)
 
         # Выводим результат
         await ctx.respond(embed=embed)
@@ -963,6 +989,175 @@ async def auto_tabard_list(
 
     except Exception as error:
         logger.error(f'Ошибка в команде "/auto_simbols_list": "{error}"')
+        await ctx.respond(f'Произошла ошибка при обработке файла: {error}')
+
+
+@dataclass
+class PVPMember:
+  nick: str
+  cdWin: int
+  streek: int
+  multiplierRobbery: float
+  ourScore: int
+  opponentScore: int
+  attackOrDef: int
+  topOurGuild: int
+  topOpponentGuild: int
+  winOrLose: int
+  pyament: int = None
+
+@commands.slash_command(
+    name="calculation_payments",
+    description="Загрузка файла формата file.csv для расчета выплат за ЧД/РЧД"
+)
+async def calculation_payments(
+        ctx: discord.ApplicationContext,
+        file: discord.Option(
+            discord.Attachment,
+            description="файла формата file.csv"
+        )
+) -> None:
+
+    await ctx.defer()
+
+    if not file.filename.endswith('.csv'):
+        await ctx.respond(':x: Ошибка приложите файл с расширением .csv')
+        return
+
+    try:
+        file_bytes = await file.read()
+
+        if b'\x00' in file_bytes:
+            await ctx.respond(
+                ":x: **Ошибка:** Этот файл является бинарным (скорее всего, это Excel `.xlsx`, "
+                "которому просто переименовали расширение).\n"
+                "Пожалуйста, откройте таблицу в Excel и нажмите `Файл -> Сохранить как -> CSV`."
+            )
+            return
+
+        encodings = ['utf-8', 'utf-8-sig', 'cp866' , 'cp1251', 'utf-16', 'latin-1']
+        content = None
+        for enc in encodings:
+            try:
+                content = file_bytes.decode(enc)
+                break
+            except UnicodeDecodeError:
+                continue
+
+        if not content:
+            await ctx.respond(":x: Не удалось распознать кодировку файла.")
+            return
+
+        file = io.StringIO(content, newline='')
+        header_line = file.readline()
+        data_start_pos = file.tell()
+        sample = file.read(1024)
+        file.seek(data_start_pos)
+
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=';')
+            reader = csv.reader(file, dialect)
+        except csv.Error:
+            reader = csv.reader(file, delimiter=';')
+
+        pvp_members = []
+        skipped_rows = 0
+
+        for row_idx, row in enumerate(reader, start=2):
+            if not row:
+                continue
+            if not any(cell.strip() for cell in row):
+                continue
+
+            try:
+                pvp_members.append(PVPMember(
+                    nick=str(row[0]).strip(),
+                    cdWin=int(row[1]),
+                    streek=int(row[2]),
+                    multiplierRobbery=float(str(row[3]).replace(",", ".")),
+                    ourScore=int(row[4]),
+                    opponentScore=int(row[5]),
+                    attackOrDef=int(row[6]),
+                    topOurGuild=int(row[7]),
+                    topOpponentGuild=int(row[8]),
+                    winOrLose=int(row[9])
+                ))
+            except ValueError as e:
+                logger.info(f"Пропущена строка {row_idx}: неверный формат данных. Ошибка: {e}")
+                skipped_rows += 1
+                continue
+        final_string = ""
+        minimal_payment = 200000
+        for m in pvp_members:
+
+            if m.attackOrDef == 1:
+                max_realgar = (Decimal('0.25') * Decimal(str(m.multiplierRobbery)) +  Decimal('0.75') *
+                               Decimal(str(m.multiplierRobbery))) * Decimal(RANGE_TOP[m.topOurGuild - m.topOpponentGuild])
+                id_from_range = ID_FROM_RANGE[m.topOurGuild - m.topOpponentGuild]
+                if m.winOrLose == 1:
+                    base_ratio = RATIO_FOR_WIN[m.topOurGuild][id_from_range]
+                    actual_realgar = ((Decimal('0.25') * Decimal(str(m.multiplierRobbery)) + (Decimal('0.75') *
+                                   Decimal(str(m.multiplierRobbery))) *
+                                   Decimal(m.ourScore / Decimal(m.ourScore + m.opponentScore))) *
+                                   Decimal(RANGE_TOP[m.topOurGuild - m.topOpponentGuild]))
+                    calc_ratio = (Decimal('0.25') * Decimal(base_ratio) +
+                             Decimal(Decimal('0.75') * Decimal(base_ratio)
+                                     * (Decimal(actual_realgar) / Decimal(max_realgar)))) - m.streek
+                    ratio = max(Decimal('1'), calc_ratio)
+
+                    calc_payment = int((minimal_payment * m.cdWin + minimal_payment) * Decimal(ratio))
+                    m.payment = calc_payment
+                if m.winOrLose == 2:
+                    base_ratio = RATIO_FOR_LOSE[m.topOurGuild][id_from_range]
+                    calc_ratio = (Decimal('0.25') * Decimal(base_ratio) +
+                                  Decimal(Decimal('0.75') * Decimal(base_ratio)
+                                          * Decimal(m.ourScore / 14400))) - m.streek
+                    ratio = max(Decimal('1'), calc_ratio)
+                    calc_payment = int((minimal_payment * m.cdWin + minimal_payment) * Decimal(ratio))
+                    m.payment = calc_payment
+            if m.attackOrDef == 2:
+
+                max_realgar = Decimal(m.multiplierRobbery) * Decimal(RANGE_TOP[m.topOpponentGuild - m.topOurGuild])
+
+                if m.winOrLose == 1:
+
+                    base_ratio = RATIO_FOR_WIN_DEF[m.topOpponentGuild]
+                    calc_ratio = Decimal((Decimal('0.25') * Decimal(base_ratio) +
+                                  Decimal(Decimal('0.75') * Decimal(base_ratio))) - m.streek)
+                    ratio = max(Decimal('1'), calc_ratio)
+
+                    calc_payment = int((minimal_payment * m.cdWin + minimal_payment) * Decimal(ratio))
+                    m.payment = calc_payment
+                if m.winOrLose == 2:
+
+                    first_ratio = Decimal('0.25') * Decimal(str(m.multiplierRobbery))
+
+                    ratio_for_score = Decimal(m.opponentScore / (m.ourScore + m.opponentScore))
+
+                    second_ration = (Decimal('0.75') *
+                                    Decimal(str(m.multiplierRobbery))) * ratio_for_score
+
+                    actual_realgar = Decimal(first_ratio + second_ration) * Decimal(RANGE_TOP[m.topOpponentGuild - m.topOurGuild])
+
+                    calc_ratio = (Decimal(RATIO_FOR_LOSE_DEF_RANGE[m.topOpponentGuild]) +
+                                    Decimal(RATIO_FOR_LOSE_DEF_EFFORTS[m.topOpponentGuild])
+                                     * Decimal(Decimal('1') - Decimal(Decimal(actual_realgar) / Decimal(max_realgar)))) - m.streek
+                    ratio = max(Decimal('1'), calc_ratio)
+
+                    calc_payment = int((minimal_payment * m.cdWin + minimal_payment) * Decimal(ratio))
+                    m.payment = calc_payment
+            formated_string = f"{m.payment:,}".replace(",", " ")
+            final_string += f'{m.nick} -> {formated_string}\n'
+
+        embed = discord.Embed(
+            title="Выплаты за ЧД/РЧД :money_with_wings:",
+            description=final_string,
+            color=discord.Color.green()
+        )
+
+        await ctx.respond(embed=embed)
+    except Exception as error:
+        logger.error(f'Ошибка в команде "/calculation_payments": "{error}"')
         await ctx.respond(f'Произошла ошибка при обработке файла: {error}')
 
 @commands.slash_command(
@@ -1205,4 +1400,5 @@ def setup(bot: discord.Bot):
     bot.add_application_command(auto_tabard_list)
     bot.add_application_command(clear_role)
     bot.add_application_command(stat_auto_month)
+    bot.add_application_command(calculation_payments)
 
