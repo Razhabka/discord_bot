@@ -380,6 +380,6 @@ def setup(bot: discord.Bot):
     bot.add_application_command(technical_works)
     bot.add_application_command(clear_all)
     # bot.add_application_command(give_role_to)
-    bot.add_application_command(check_roles)
+    # bot.add_application_command(check_roles)
     bot.add_application_command(clear_rcd_db_data)
     bot.add_application_command(clear_pve_db_data)

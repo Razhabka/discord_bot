@@ -83,6 +83,120 @@ TEСHNICAL_WORKS: str = '_Скоро запустим!_👌'
 
 WRONG_PARMS: str = '_Неверно заданы параметры, повтори снова!🔁_'
 
+RATIO_FOR_TOP_1_5_WIN = {
+    0: '5',
+    1: '5',
+    2: '4',
+    3: '3'
+}
+
+RATIO_FOR_TOP_1_5_LOSE = {
+    0: '3.5',
+    1: '3',
+    2: '2.5',
+    3: '2'
+}
+
+RATIO_FOR_TOP_6_10_WIN = {
+    0: '5',
+    1: '4.5',
+    2: '4',
+    3: '3'
+}
+
+RATIO_FOR_TOP_6_10_LOSE = {
+    0: '2',
+    1: '2',
+    2: '1.75',
+    3: '1.5'
+}
+
+RATIO_FOR_TOP_11_15_WIN = {
+    0: '4.75',
+    1: '4.5',
+    2: '3.5',
+    3: '2.5'
+}
+
+RATIO_FOR_TOP_11_15_LOSE = {
+    0: '2',
+    1: '1.75',
+    2: '1.5',
+    3: '1.25'
+}
+
+RATIO_FOR_TOP_16_AND_ALL_WIN = {
+    0: '3',
+    1: '2.5',
+    2: '2',
+    3: '1'
+}
+
+RATIO_FOR_TOP_16_AND_ALL_LOSE = {
+    0: '1.5',
+    1: '1.25',
+    2: '1',
+    3: '1'
+}
+
+RANGE_TOP = {
+    **{k: '1' for k in range(6, 10)},
+    4: '0.95',
+    3: '0.85',
+    **{k: '0.75' for k in range(-2, 3)},
+    -3: '0.65',
+    -4: '0.55',
+    -5: '0.45',
+    -6: '0.35',
+    -7: '0.25',
+    -8: '0.15',
+    -9: '0.05',
+    **{k: '0' for k in range(-10, -20)},
+}
+
+ID_FROM_RANGE = {
+    **{k: 0 for k in range(3, 10)},
+    **{k: 1 for k in range(-2, 3)},
+    **{k: 2 for k in range(-4, -2)},
+    **{k: 3 for k in range(-20, -4)}
+}
+
+RATIO_FOR_WIN = {
+    **{k: RATIO_FOR_TOP_1_5_WIN for k in range(1, 6)},
+    **{k: RATIO_FOR_TOP_6_10_WIN for k in range(6, 11)},
+    **{k: RATIO_FOR_TOP_11_15_WIN for k in range(11, 16)},
+    **{k: RATIO_FOR_TOP_16_AND_ALL_WIN for k in range(16, 30)},
+}
+
+RATIO_FOR_LOSE = {
+    **{k: RATIO_FOR_TOP_1_5_LOSE for k in range(1, 6)},
+    **{k: RATIO_FOR_TOP_6_10_LOSE for k in range(6, 11)},
+    **{k: RATIO_FOR_TOP_11_15_LOSE for k in range(11, 16)},
+    **{k: RATIO_FOR_TOP_16_AND_ALL_LOSE for k in range(16, 30)},
+}
+
+RATIO_FOR_WIN_DEF = {
+    **{k: '5' for k in range(1, 6)},
+    **{k: '4.5' for k in range(6, 11)},
+    **{k: '3' for k in range(11, 16)},
+    **{k: '2' for k in range(16, 30)},
+}
+
+RATIO_FOR_LOSE_DEF_RANGE = {
+    **{k: '2' for k in range(1, 6)},
+    **{k: '1.69' for k in range(6, 11)},
+    **{k: '0.5' for k in range(11, 16)},
+    **{k: '0.5' for k in range(16, 30)},
+}
+
+
+RATIO_FOR_LOSE_DEF_EFFORTS = {
+    **{k: '2' for k in range(1, 6)},
+    **{k: '2.06' for k in range(6, 11)},
+    **{k: '1.5' for k in range(11, 16)},
+    **{k: '0.75' for k in range(16, 30)},
+}
+
 RANK_MAPPING = {
     0: "Лидер",
     1: "Казначей",
