@@ -15,6 +15,8 @@ APPLICATION_CHANNEL_ID = settings.application_channel_id
 
 RCD_APPLICATION_CHANNEL_ID = settings.rcd_application_channel_id
 
+RCD_LIST_CHANNEL_ID = settings.rcd_list_channel_id
+
 PVE_CHANNEL_ID = settings.pve_channel_id
 
 PVE_APPLICATION_CHANNEL_ID = settings.pve_app_channel_id

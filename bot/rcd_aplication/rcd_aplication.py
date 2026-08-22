@@ -17,7 +17,8 @@ from role_application.functions import has_required_role
 from core import (
     VETERAN_ROLE, ANSWERS_IF_NO_ROLE, INDEX_CLASS_ROLE,
     SERGEANT_ROLE, LEADER_ROLE, OFICER_ROLE, TREASURER_ROLE,
-    RCD_APPLICATION_CHANNEL_ID, GUEST_ROLE, NOT_NOTICE_FOR_RCD
+    RCD_APPLICATION_CHANNEL_ID, GUEST_ROLE, NOT_NOTICE_FOR_RCD,
+    RCD_LIST_CHANNEL_ID
 )
 
 
@@ -37,7 +38,7 @@ class StaticNames:
     MESSAGE_NAME: str = 'message_name'
     START_RCD_MESSAGE: str = 'start_rcd_message'
     RCD_LIST_CHANNEL: str = 'rcd_list_channel'
-
+    PUBLISHED_RCD_MESSAGE: str = 'published_rcd_message'
 
 class RcdDate(Modal):
     """
@@ -200,10 +201,10 @@ class RaidChampionDominionApplication(Modal):
                 match = pattern.search(field_value)
                 if match:
                     new_value = field_value.replace(
-                        match.group(0), f'{member.mention}: {class_role} ({honor})'
+                        match.group(0), f'{member.mention}: {class_role} ({honor}) [{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}]'
                     )
                 else:
-                    new_value = field_value + f'\n{member.mention}: {class_role} ({honor})'
+                    new_value = field_value + f'\n{member.mention}: {class_role} ({honor}) [{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}]'
                 during_embed.fields[field_index].value = new_value
                 await start_rcd_message.edit(embed=during_embed)
                 await rcd_app_orm.insert_appmember_id(session, interaction.user.id)
@@ -580,7 +581,7 @@ class CreateRCDList(View):
         custom_id='Опубликовать',
     )
     async def publish_callback(
-        self, button: discord.ui.Button, interaction: discord.Interaction
+            self, button: discord.ui.Button, interaction: discord.Interaction
     ):
         try:
             await interaction.response.defer(invisible=False, ephemeral=True)
@@ -590,51 +591,79 @@ class CreateRCDList(View):
                         ANSWERS_IF_NO_ROLE,
                         delete_after=2
                     )
-                rcd_appchannel_message_obj = await rcd_app_orm.get_message_data_obj(
+
+                list_channel: discord.TextChannel = interaction.guild.get_channel(RCD_LIST_CHANNEL_ID)
+
+                published_message_obj = await rcd_app_orm.get_message_data_obj(
                     session=session,
-                    pk=StaticNames.RCD_APPCHANNEL_MESSAGE
+                    pk=StaticNames.PUBLISHED_RCD_MESSAGE
                 )
-                rcd_app_channel: discord.TextChannel = (interaction.guild.get_channel(RCD_APPLICATION_CHANNEL_ID))
-                rcd_app_message: discord.Message = await rcd_app_channel.fetch_message(
-                    rcd_appchannel_message_obj.message_id
-                )
-                rcd_app_message_embeds: list[discord.Embed] = rcd_app_message.embeds
+
+                published_message: discord.Message | None = None
+                published_embeds: list[discord.Embed] = []
+
+                if published_message_obj:
+                    try:
+                        published_message = await list_channel.fetch_message(
+                            published_message_obj.message_id
+                        )
+                        published_embeds = published_message.embeds
+                    except discord.NotFound:
+                        pass
                 during_embed_list: list[discord.Embed] = interaction.message.embeds
                 f_embed: discord.Embed = during_embed_list[0]
                 if len(during_embed_list) > 1:
                     s_embed: discord.Embed = during_embed_list[1]
+
                 date_data_obj = await rcd_app_orm.get_rcd_date_obj(
                     session=session,
                     pk=StaticNames.RCD_DATE
                 )
                 atack_embed: discord.Embed = publish_rcd_embed(date=date_data_obj.date)
                 defense_embed: discord.Embed = publish_rcd_second_embed(date=date_data_obj.date)
+
                 if self.children[1].style == discord.ButtonStyle.red:
-                    if 'Заявки на РЧД' in rcd_app_message_embeds[0].title:
-                        return await interaction.respond('_Сначала нужно отправить список "АТАКА"! ❌_', delete_after=3)
+                    if not published_message or not published_embeds:
+                        return await interaction.respond(
+                            '_Сначала нужно отправить список "АТАКА"! ❌_',
+                            delete_after=3
+                        )
+
                     for field in [field for field in s_embed.fields if field.value != '']:
                         name, value, inline = field.name, field.value, field.inline
                         defense_embed.add_field(name=name, value=value, inline=inline)
 
-                    if len(rcd_app_message_embeds) > 1:
-                        rcd_app_message_embeds[1] = defense_embed
+                    if len(published_embeds) > 1:
+                        published_embeds[1] = defense_embed
                     else:
-                        rcd_app_message_embeds.append(defense_embed)
-                    await rcd_app_message.edit(embeds=rcd_app_message_embeds)
+                        published_embeds.append(defense_embed)
+
+                    await published_message.edit(embeds=published_embeds)
                     logger.info(
-                        f'Список "ЗАЩИТА" изменён в {rcd_app_channel.name} '
+                        f'Список "ЗАЩИТА" опубликован в {list_channel.name} '
                         f'пользователем {interaction.user.display_name}'
                     )
                 else:
                     for field in [field for field in f_embed.fields if field.value != '']:
                         name, value, inline = field.name, field.value, field.inline
                         atack_embed.add_field(name=name, value=value, inline=inline)
-                    rcd_app_message_embeds[0] = atack_embed
-                    await rcd_app_message.edit(embeds=rcd_app_message_embeds, view=None)
+
+                    if published_message and published_embeds:
+                        published_embeds[0] = atack_embed
+                        await published_message.edit(embeds=published_embeds)
+                    else:
+                        published_message = await list_channel.send(embed=atack_embed)
+                        await rcd_app_orm.insert_message_id(
+                            session=session,
+                            message_name=StaticNames.PUBLISHED_RCD_MESSAGE,
+                            message_id=published_message.id
+                        )
+
                     logger.info(
-                        f'Список "АТАКА" изменён в {rcd_app_channel.name} '
+                        f'Список "АТАКА" опубликован в {list_channel.name} '
                         f'пользователем {interaction.user.display_name}'
                     )
+                await session.commit()
                 await interaction.respond('✅', delete_after=1)
         except Exception as error:
             logger.error(f'При публикации списка возникла ошибка "{error}"')

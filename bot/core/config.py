@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     rcd_application_channel_id: int
     pve_channel_id: int
     pve_app_channel_id: int
+    rcd_list_channel_id: int
 
     model_config = SettingsConfigDict(
         env_file=env_path,  # Используем абсолютный путь
