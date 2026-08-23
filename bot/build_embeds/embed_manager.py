@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import csv
 import json
@@ -12,11 +13,10 @@ import discord
 from discord.ext import commands
 from discord.ui import Modal, InputText, View, select, button
 from loguru import logger
-from pydantic import color
-from sqlalchemy.dialects.mysql import DECIMAL
+
 
 from .functions import (
-    validate_amount, generate_member_list, handle_selection,
+    validate_amount, generate_member_list,
     sort_nicknames_by_role
 )
 from .embeds import attention_embed, symbols_list_embed
@@ -155,6 +155,14 @@ class AttentionMessage(Modal):
                 required=False
             )
         )
+        self.add_item(
+            InputText(
+                style=discord.InputTextStyle.short,
+                label='Введите ссылку на картинку',
+                placeholder='Сюда',
+                required=False
+            )
+        )
 
     async def callback(self, interaction: discord.Interaction):
         try:
@@ -162,6 +170,7 @@ class AttentionMessage(Modal):
             header = self.children[0].value if self.children[0].value != "" else None
             message: str = str(self.children[1].value)
             raw_color: str = str(self.children[2].value).strip()
+            link_picture: str = str(self.children[3].value)
             embed_color = 0xc00433
 
             if raw_color:
@@ -175,11 +184,18 @@ class AttentionMessage(Modal):
                         ephemeral=True,
                         delete_after=7
                     )
-            await self.channel.send(embed=attention_embed(header=header, message=message, color=embed_color))
+
+            if link_picture:
+                await self.channel.send(
+                    embed=attention_embed(header=header, message=message, color=embed_color, link=link_picture))
+            else:
+                await self.channel.send(
+                    embed=attention_embed(header=header, message=message, color=embed_color))
+
             await interaction.respond('✅', delete_after=1)
         except Exception as error:
             logger.error(
-                f'Пользователь {interaction.user.display_name} попытался сделать объявление '
+                f'Пользователь {interaction.user.display_name} попытался сделать объявление'
                 f'но получил ошибку {error}!'
             )
 
@@ -228,7 +244,7 @@ async def attention_error(
 
 class SetNewDescription(Modal):
     """Модальное окно для установки нового описания embed"""
-    def __init__(self, message_id: int, channel: discord.abc.GuildChannel, current_title: str | None, description: str | None, current_color: str | None) -> None:
+    def __init__(self, message_id: int, channel: discord.abc.GuildChannel, current_title: str | None, description: str | None, current_color: str | None, current_picture: str | None) -> None:
         super().__init__(title='Укажи новое описание embed', timeout=None)
         self.message_id = message_id
         self.channel = channel
@@ -260,9 +276,19 @@ class SetNewDescription(Modal):
                 placeholder='Например: #ff0000 или 00ff29 (Оставь пустым для стандартного)',
                 max_length=7,
                 required=False,
-                value= current_color
+                value=current_color
             )
         )
+        self.add_item(
+            InputText(
+                style=discord.InputTextStyle.short,
+                label='Введите ссылку на картинку',
+                placeholder='Сюда',
+                required=False,
+                value=current_picture
+            )
+        )
+
 
     async def callback(self, interaction: discord.Interaction):
         try:
@@ -275,8 +301,10 @@ class SetNewDescription(Modal):
             raw_title = self.children[0].value
             raw_description = self.children[1].value
             raw_color = self.children[2].value
+            raw_link_picture: str = str(self.children[3].value)
             embed.title = raw_title if raw_title != "" else None
             embed.description = raw_description if raw_description != "" else None
+            embed.set_thumbnail(url=raw_link_picture)
             if raw_color:
                 hex_color = raw_color.replace('#', '')
                 try:
@@ -343,6 +371,10 @@ async def edit_embed_description(
             current_title = message.embeds[0].title
             current_description = message.embeds[0].description
             current_color = message.embeds[0].color
+            if embed.thumbnail and embed.thumbnail.url:
+                picture = embed.thumbnail.url
+            else:
+                picture = None
             if embed.color and embed.color.value is not None:
                 current_color = f"#{embed.color.value:06x}"
         await ctx.response.send_modal(SetNewDescription(
@@ -350,7 +382,8 @@ async def edit_embed_description(
             channel=target_channel,
             current_title=current_title,
             description=current_description,
-            current_color=current_color
+            current_color=current_color,
+            current_picture=picture
         ))
         logger.info(
             f'Команда "/edit_embed_description" вызвана пользователем'
@@ -882,7 +915,6 @@ class GuildMember:
     authority: int
     cloak: str
 
-
 @commands.slash_command(
     name="auto_tabard_list",
     description="Загрузить файл file.txt (GuildStats) и вывести ТОПы по чистому авторитету.",
@@ -1392,6 +1424,114 @@ async def get_statistic_authority_error(
     """
     await command_error(ctx, error, "get_statistic_authority")
 
+class MessageModal(discord.ui.Modal):
+    def __init__(self, role):
+        super().__init__(title='Рассылка сообщений')
+        self.roles = role
+
+        self.add_item(
+            InputText(
+                style=discord.InputTextStyle.long,
+                label='Сообщение для рассылки',
+                placeholder='Введите текст...',
+                required=True
+            )
+        )
+        self.add_item(
+            InputText(
+                style=discord.InputTextStyle.short,
+                label='Укажите код цвета (HEX)',
+                placeholder='Например: #ff0000 или 00ff29 (Оставь пустым для стандартного)',
+                max_length=7,
+                required=False
+            )
+        )
+        self.add_item(
+            InputText(
+                style=discord.InputTextStyle.short,
+                label='Ссылка на картинку',
+                placeholder='Вставьте ссылку на картинку, пожалуйста',
+                required=False
+            )
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            await interaction.response.defer(ephemeral=True)
+
+            message_text = self.children[0].value
+            raw_color: str = str(self.children[1].value).strip()
+            link_on_picture: str = str(self.children[2].value)
+            embed_color = 0xc00433
+
+            if raw_color:
+                hex_color = raw_color.replace('#', '')
+                try:
+                    embed_color = int(hex_color, 16)
+                except ValueError:
+                    await interaction.respond(
+                        '⚠️ Неверный формат цвета! Используйте HEX-код, например: `#ff0000` или `00ff00`. '
+                        'Сообщение отправлено со стандартным цветом.',
+                        ephemeral=True,
+                        delete_after=7
+                    )
+
+            members_to_dm = set()
+            for role in self.roles:
+                for member in role.members:
+                    if not member.bot:
+                        members_to_dm.add(member)
+
+            if not members_to_dm:
+                await interaction.followup.send("Не найдено пользователей для рассылки (возможно, роли пусты).", ephemeral=True)
+                return
+
+            # await interaction.followup.send(f"Начинаю рассылку для {len(members_to_dm)} пользователей...", ephemeral=True)
+
+            success = 0
+            failed = 0
+
+            for member in members_to_dm:
+                try:
+                    if link_on_picture:
+                        await member.send(embed=attention_embed(header=None, message=message_text, color=embed_color, link=link_on_picture))
+                    else:
+                        await member.send(embed=attention_embed(header=None, message=message_text, color=embed_color))
+                    success += 1
+                    await asyncio.sleep(1)
+                except discord.Forbidden:
+                    failed += 1
+                except Exception:
+                    failed += 1
+
+            await interaction.followup.send(
+                f"**Отчет о рассылке:**\nУспешно отправлено: {success}\nНе удалось отправить (закрыты ЛС): {failed}")
+        except Exception as error:
+            await interaction.followup.send(
+                f"**Отчет о рассылке:**\nУспешно отправлено: {success}\nНе удалось отправить (закрыты ЛС): {failed}")
+            logger.error(f'Ошибка в команде "/get_statistic_authority": "{error}"')
+
+class RoleSelectView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.role_select(
+        placeholder="Выберите роли, для рассылки",
+        min_values=1,
+        max_values=5,
+    )
+    async def select_callback(self, select: discord.ui.Select, interaction: discord.Interaction):
+        role = select.values
+
+        modal = MessageModal(role=role)
+        await interaction.response.send_modal(modal)
+
+@commands.slash_command(name='mass_mailing', description="Массовая рассылка сообщений по ролям")
+@commands.has_any_role(LEADER_ROLE, TREASURER_ROLE)
+async def mass_mailing(ctx: discord.ApplicationContext):
+    view = RoleSelectView()
+    await ctx.respond("Выберите роли, участникам которых нужно отправить сообщение:", view=view, ephemeral=True)
+
 
 def setup(bot: discord.Bot):
     bot.add_application_command(attention)
@@ -1401,4 +1541,5 @@ def setup(bot: discord.Bot):
     bot.add_application_command(clear_role)
     bot.add_application_command(stat_auto_month)
     bot.add_application_command(calculation_payments)
+    bot.add_application_command(mass_mailing)
 

@@ -4,7 +4,19 @@ import discord
 from core import SMALL_GUILD_ICON_URL
 
 
-def attention_embed(header: str, message: str, color: int = 0xc00433) -> discord.Embed:
+# def attention_embed(header: str, message: str, color: int = 0xc00433) -> discord.Embed:
+#     """
+#     Функция для создания вложения с предупреждением.
+#     """
+#     embed = discord.Embed(
+#         title=header,
+#         description=f'{message}',
+#         color=color
+#     )
+#     embed.set_thumbnail(url=SMALL_GUILD_ICON_URL)
+#     return embed
+
+def attention_embed(header: str, message: str, color: int = 0xc00433, link: str = SMALL_GUILD_ICON_URL) -> discord.Embed:
     """
     Функция для создания вложения с предупреждением.
     """
@@ -13,7 +25,7 @@ def attention_embed(header: str, message: str, color: int = 0xc00433) -> discord
         description=f'{message}',
         color=color
     )
-    embed.set_thumbnail(url=SMALL_GUILD_ICON_URL)
+    embed.set_thumbnail(url=link)
     return embed
 
 

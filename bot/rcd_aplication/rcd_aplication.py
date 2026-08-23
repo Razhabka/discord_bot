@@ -844,6 +844,7 @@ class CreateRCDList(View):
                     await attention_message.delete()
                 if 'Заявки на РЧД' in rcd_app_message.embeds[0].title:
                     await rcd_app_message.delete()
+
                 start_rcd_message_obj = await rcd_app_orm.get_message_data_obj(
                     session=session,
                     pk=StaticNames.START_RCD_MESSAGE
