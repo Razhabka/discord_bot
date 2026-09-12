@@ -153,14 +153,14 @@ RANGE_TOP = {
     -7: '0.25',
     -8: '0.15',
     -9: '0.05',
-    **{k: '0' for k in range(-10, -20)},
+    **{k: '0.' for k in range(-30, -10)},
 }
 
 ID_FROM_RANGE = {
     **{k: 0 for k in range(3, 10)},
     **{k: 1 for k in range(-2, 3)},
     **{k: 2 for k in range(-4, -2)},
-    **{k: 3 for k in range(-20, -4)}
+    **{k: 3 for k in range(-30, -4)}
 }
 
 RATIO_FOR_WIN = {

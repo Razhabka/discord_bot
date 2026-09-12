@@ -192,7 +192,7 @@ class AttentionMessage(Modal):
                 await self.channel.send(
                     embed=attention_embed(header=header, message=message, color=embed_color))
 
-            await interaction.respond('✅', delete_after=1)
+            await interaction.followup.send('✅', delete_after=1)
         except Exception as error:
             logger.error(
                 f'Пользователь {interaction.user.display_name} попытался сделать объявление'
@@ -224,11 +224,11 @@ async def attention(
         f'Команда "/attention" вызвана пользователем '
         f'"{ctx.user.display_name}" в канал "{channel}"!'
     )
-    await ctx.respond(
-        f'_Сообщение отправлено в канал {channel.mention}!_',
-        ephemeral=True,
-        delete_after=3
-    )
+    # await ctx.respond(
+    #     f'_Сообщение отправлено в канал {channel.mention}!_',
+    #     ephemeral=True,
+    #     delete_after=3
+    # )
 
 
 @attention.error
@@ -1132,9 +1132,12 @@ async def calculation_payments(
                                    Decimal(str(m.multiplierRobbery))) *
                                    Decimal(m.ourScore / Decimal(m.ourScore + m.opponentScore))) *
                                    Decimal(RANGE_TOP[m.topOurGuild - m.topOpponentGuild]))
+
+                    realgar_factor = Decimal(actual_realgar) / Decimal(max_realgar) if Decimal(max_realgar) != 0 else Decimal(0)
+
                     calc_ratio = (Decimal('0.25') * Decimal(base_ratio) +
                              Decimal(Decimal('0.75') * Decimal(base_ratio)
-                                     * (Decimal(actual_realgar) / Decimal(max_realgar)))) - m.streek
+                                     * realgar_factor)) - m.streek
                     ratio = max(Decimal('1'), calc_ratio)
 
                     calc_payment = int((minimal_payment * m.cdWin + minimal_payment) * Decimal(ratio))

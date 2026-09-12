@@ -272,15 +272,22 @@ class RoleApplication(Modal):
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer(invisible=False, ephemeral=True)
         try:
+
             nickname: str = self.children[0].value
             user: discord.User = interaction.user
+            logger.info(f'{user.id} -> {interaction.user.display_name}')
             member: discord.Member | None = discord.utils.get(
                 interaction.guild.members, id=user.id
             )
-            member_by_display_name: discord.Member | None = discord.utils.get(
-                interaction.guild.members, display_name=nickname
+            role_sergeant = discord.utils.get(
+                interaction.guild.roles, name=SERGEANT_ROLE
             )
-            role = discord.utils.get(interaction.guild.roles, name=GUEST_ROLE)
+            role_guest = discord.utils.get(
+                interaction.guild.roles, name=GUEST_ROLE
+            )
+            dull_lights = discord.utils.get(
+                interaction.guild.roles, name=DULL_LIGHTS_ROLE
+            )
             async with async_session_factory() as session:
                 obj = await role_app_orm.get_roleapp_obj(session, nickname)
                 player_parms = character_lookup(1, nickname)
@@ -305,10 +312,19 @@ class RoleApplication(Modal):
                         interaction, ANSWER_IF_DUPLICATE_APP, 10
                     )
 
-                if member_by_display_name and role not in member_by_display_name.roles:
+                role_to_check =[role_sergeant, role_guest]
+
+                if any(role in member.roles for role in role_to_check):
                     return await self.respond_with_message(
-                        interaction, ANSWER_IF_DUPLICATE_NICK, 10
-                    )
+                            interaction,
+                        'У тебя имеются уже все роли, тебе тут больше нечего получать',
+                        10
+                        )
+
+                # if member_by_display_name and role not in member_by_display_name.roles:
+                #     return await self.respond_with_message(
+                #         interaction, ANSWER_IF_DUPLICATE_NICK, 10
+                #     )
 
                 description = self.build_description(player_parms, user)
                 await self.send_application(
@@ -323,7 +339,7 @@ class RoleApplication(Modal):
         except Exception as error:
             await interaction.respond(
                 '_Не удалось сформировать заявку!❌\nСкорее всего сайт оружейки недоступен.\n'
-                'Напиши ГайРичи и приложи скрин этого сообщения!_'
+                'Напиши Тьме и приложи скрин этого сообщения!_'
             )
             logger.error(
                 f'При попытке ввести никнейм пользователем '
