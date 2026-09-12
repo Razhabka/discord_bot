@@ -1132,9 +1132,12 @@ async def calculation_payments(
                                    Decimal(str(m.multiplierRobbery))) *
                                    Decimal(m.ourScore / Decimal(m.ourScore + m.opponentScore))) *
                                    Decimal(RANGE_TOP[m.topOurGuild - m.topOpponentGuild]))
+
+                    realgar_factor = Decimal(actual_realgar) / Decimal(max_realgar) if Decimal(max_realgar) != 0 else Decimal(0)
+
                     calc_ratio = (Decimal('0.25') * Decimal(base_ratio) +
                              Decimal(Decimal('0.75') * Decimal(base_ratio)
-                                     * (Decimal(actual_realgar) / Decimal(max_realgar)))) - m.streek
+                                     * realgar_factor)) - m.streek
                     ratio = max(Decimal('1'), calc_ratio)
 
                     calc_payment = int((minimal_payment * m.cdWin + minimal_payment) * Decimal(ratio))
