@@ -401,8 +401,6 @@ class NotificationButton(Button):
                             comment=comment
 
                         ),
-                        # TODO: 10800
-                        delete_after=10800
                     )
                 except Forbidden:
                     logger.warning(f'Пользователю "{member.display_name}" запрещено отправлять сообщения')

@@ -1,3 +1,4 @@
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .base_async_orm import AsyncORM
@@ -85,10 +86,8 @@ class PveApplicationORM(AsyncORM):
     async def delete_from_notice_list(
         self, session: AsyncSession, role
     ):
-        obj = await self.get_filter_obj_first(
-            session, NoticeListPve, role=role
-        )
-        await self.delete_data(session, obj)
+        stmt = delete(NoticeListPve).where(NoticeListPve.role == role)
+        await session.execute(stmt)
     
     async def clear_pve_data(self, session: AsyncSession):
         for model in [AppMemberListPve, DateInfoPve, PveApplication, NoticeListPve]:
