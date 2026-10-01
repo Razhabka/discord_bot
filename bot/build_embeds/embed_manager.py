@@ -192,7 +192,7 @@ class AttentionMessage(Modal):
                 await self.channel.send(
                     embed=attention_embed(header=header, message=message, color=embed_color))
 
-            await interaction.respond('✅', delete_after=1)
+            await interaction.followup.send('✅', delete_after=1)
         except Exception as error:
             logger.error(
                 f'Пользователь {interaction.user.display_name} попытался сделать объявление'
@@ -224,11 +224,11 @@ async def attention(
         f'Команда "/attention" вызвана пользователем '
         f'"{ctx.user.display_name}" в канал "{channel}"!'
     )
-    await ctx.respond(
-        f'_Сообщение отправлено в канал {channel.mention}!_',
-        ephemeral=True,
-        delete_after=3
-    )
+    # await ctx.respond(
+    #     f'_Сообщение отправлено в канал {channel.mention}!_',
+    #     ephemeral=True,
+    #     delete_after=3
+    # )
 
 
 @attention.error
